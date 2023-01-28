@@ -536,7 +536,8 @@ class TuneStrategy(object):
         for op_info, op_cap_lst in self.capability['opwise'].items():
             op_name, op_type = op_info
             for op_cap in op_cap_lst:
-                if 'activation' in op_cap and op_cap['activation']['quant_mode'] in ['static', 'dynamic']:
+                if 'activation' in op_cap and 'quant_mode' in op_cap['activation'] and \
+                    op_cap['activation']['quant_mode'] in ['static', 'dynamic']:
                     self.op_stats_result['quantizable_ops'] += 1
                     self.op_stats_result['quantizable_ops_lst'].append(op_info)
                     break
