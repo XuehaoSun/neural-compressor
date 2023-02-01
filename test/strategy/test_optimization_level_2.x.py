@@ -46,17 +46,69 @@ def build_fake_model():
     return graph
 
 
+
+def export_onnx_model(model, path, opset=12):
+    import torch
+    x = torch.randn(100, 3, 224, 224, requires_grad=True)
+    torch_out = model(x)
+
+    # Export the model
+    torch.onnx.export(model,                     # model being run
+                      x,                         # model input (or a tuple for multiple inputs)
+                      path,                      # where to save the model (can be a file or file-like object)
+                      export_params=True,        # store the trained parameter weights inside the model file
+                      opset_version=opset,       # the ONNX version to export the model to, please ensure at least 11.
+                      do_constant_folding=True,  # whether to execute constant folding for optimization
+                      input_names = ["input"],   # the model"s input names
+                      output_names = ["output"], # the model"s output names
+                      dynamic_axes={"input" : {0 : "batch_size"},    # variable length axes
+                                    "output" : {0 : "batch_size"}})
+
+
 class TestOptimizationLevel(unittest.TestCase):
 
     @classmethod
     def setUpClass(self):
+        import onnx
+        import torchvision
         self.constant_graph = build_fake_model()
+        self.rn50_torch_model = torchvision.models.resnet50()
+        self.rn50_export_path = "rn50.onnx"
+        export_onnx_model(self.rn50_torch_model, self.rn50_export_path, 12)
+        self.rn50_onnx_model = onnx.load(self.rn50_export_path)
 
     @classmethod
     def tearDownClass(self):
         shutil.rmtree('saved', ignore_errors=True)
         shutil.rmtree('nc_workspace', ignore_errors=True)
+        
+    def test_onnx_opt_level_0(self):
+        logger.info("*** Test: optimization level 0 with onnx model.")
+        from neural_compressor.quantization import fit
+        from neural_compressor.config import PostTrainingQuantConfig
+        from neural_compressor.data import Datasets, DATALOADERS
 
+        # fake evaluation function
+        def _fake_eval(model):
+            return 1
+
+        # dataset and dataloader
+        dataset = Datasets("onnxrt_qlinearops")["dummy"](((10, 3, 224, 224)))
+        dataloader = DATALOADERS["onnxrt_qlinearops"](dataset)
+
+        # tuning and accuracy criterion
+        quant_level = 0
+        conf = PostTrainingQuantConfig(quant_level=0)
+
+        # fit
+        q_model = fit(model=self.rn50_onnx_model,
+                      conf=conf,
+                      calib_dataloader= dataloader,
+                      eval_dataloader=dataloader,
+                      eval_func=_fake_eval)
+        self.assertIsNotNone(q_model)
+        
+        
     def test_tf_opt_level_0(self):
         logger.info("*** Test: optimization level 0 with tensorflow model.")
         from neural_compressor.quantization import fit
