@@ -17,6 +17,7 @@
 # ==============================================================================
 """Neural Compressor Quantization API."""
 
+from collections import defaultdict
 import os
 import pickle
 import random
@@ -171,18 +172,28 @@ class Quantization(Component):
             self.register_hook('on_train_begin', self.strategy.adaptor._pre_hook_for_hvd)
 
     def execute(self):
-        cfg = self.conf.usr_cfg
+        quant_cfg = self.conf.usr_cfg.quantization
         
         # collect the usage of quantization recipe
-        recipe_list = []
-        recipe = cfg.quantization.recipes
-        for k,v in recipe.items():
-            if v == False: recipe_list.append(k)
+        quant_recipe = 0
+        for item in quant_cfg.recipes.values():
+            if item == False: 
+                quant_recipe += 1
         
-        # dump result
-        print(f"[OP_STATS] recipe count: {len(recipe_list)}")
-        print(f"[OP_STATS] recipe list: {recipe_list}")
+        op_wise_cfg = defaultdict(lambda : 0)
+        configs = [quant_cfg.model_wise] 
+        if quant_cfg.optype_wise:
+            configs += list(quant_cfg.optype_wise.values())
+        if quant_cfg.op_wise:
+            configs += list(quant_cfg.op_wise.values())
+            
+        for item in configs:
+            if 'activation' in item and 'dtype' in item['activation'] and item['activation']['dtype']:
+                for dtype in item['activation']['dtype']:
+                    op_wise_cfg[dtype] += 1
         
+        print(f"[OP_STATS] quant_recipe: {quant_recipe}")
+        print(f"[OP_STATS] op_wise_cfg: {op_wise_cfg['fp32']}")
     def __call__(self):
         """Automatic quantization tuning main entry point.
 
