@@ -181,7 +181,7 @@ class Quantization(Component):
                 quant_recipe += 1
         
         op_wise_cfg = defaultdict(lambda : 0)
-        configs = [quant_cfg.model_wise] 
+        configs = [quant_cfg.model_wise] if quant_cfg.model_wise else []
         if quant_cfg.optype_wise:
             configs += list(quant_cfg.optype_wise.values())
         if quant_cfg.op_wise:
