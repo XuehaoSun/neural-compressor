@@ -7,11 +7,128 @@ import torch
 from tqdm import tqdm
 import os
 import sys
+
 os.environ['CUDA_VISIBLE_DEVICES'] = '1'
 sys.path.append('./')
 
 
+class SmoothQuant:
+    def __init__(self, model, dataset, device="cuda"):
+        self.model = model
+        self.model.eval()
+        self.device = device
+        self.model = self.model.to(self.device)
+        self.dataset = dataset
+        self.per_channel_info = {}
+        self.calib_cnt = 4
 
+    def get_module(self, key):
+        attrs = key.split('.')
+        module = self.model
+        for attr in attrs:
+            try:
+                attr = int(attr)
+                module = module[attr]
+            except:
+                module = getattr(module, attr)
+        return module
+
+    def save_input_pc_hook(self, name):
+        def save_input_hook(model, inputs, outputs):
+            if name not in self.per_channel_info.keys():
+                self.per_channel_info[name] = []
+            input = inputs[0]
+            ##TODO check input channel is correct
+            if len(model.weight.shape) == 4:  ##conv3d or conv1d not suppoted now, need better way
+                input = input.permute(0, 2, 3, 1)
+            input = input.reshape(-1, input.shape[-1])
+            max_tensor = torch.max(input, dim=0)[0]
+            self.per_channel_info[name].append(max_tensor)
+
+        return save_input_hook
+
+    def add_observer(self, modules, names):
+        self.hook_handles = []
+        for index, module in enumerate(modules):
+            hook_func = self.save_input_pc_hook(names[index])
+            hook_handle = module.register_forward_hook(hook_func)
+            self.hook_handles.append(hook_handle)
+
+    def remove_observer(self, modules):
+        for hook_handle in self.hook_handles:
+            hook_handle.remove()
+
+    ##https://gist.github.com/sailfish009/28b54c8aa6398148a6358b8f03c0b611
+    def percentile(t: torch.tensor, q: float):
+        """
+        Return the ``q``-th percentile of the flattened input tensor's data.
+
+        CAUTION:
+         * Needs PyTorch >= 1.1.0, as ``torch.kthvalue()`` is used.
+         * Values are not interpolated, which corresponds to
+           ``numpy.percentile(..., interpolation="nearest")``.
+
+        :param t: Input tensor.
+        :param q: Percentile to compute, which must be between 0 and 100 inclusive.
+        :return: Resulting value (scalar).
+        """
+        # Note that ``kthvalue()`` works one-based, i.e. the first sorted value
+        # indeed corresponds to k=1, not k=0! Use float(q) instead of q directly,
+        # so that ``round()`` returns an integer, even if q is a np.float32.
+        k = 1 + round(.01 * float(q) * (t.numel() - 1))
+        result = t.view(-1).kthvalue(k).values.item()
+        return result
+
+    def calibation(self, calibation_method="min_max"):
+        cnt = 1
+        for batch in tqdm(self.dataset):
+            input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
+
+            label = input_ids[:, -1]
+            attention_mask = torch.ones_like(input_ids)
+            self.model(input_ids, attention_mask=attention_mask)
+            cnt += len(batch)
+            if cnt > self.calib_cnt:
+                break
+        ##stack
+        for key in self.per_channel_info.keys():
+            val = self.per_channel_info[key]
+            val = torch.stack(val, dim=0)
+            val = torch.max(val, dim=0)[0]
+            self.per_channel_info[key] = val
+
+    def cal_scales(self, hook_modules, hook_module_names):
+        pass
+
+    def transform(self):
+        norm_to_layer_mapping = self.get_layer_mapping()
+        layer_to_norm_mapping ={}
+        for key in norm_to_layer_mapping:
+            layer_to_norm_mapping[norm_to_layer_mapping[key]]=key
+        hook_module_names_tmp = [norm_to_layer_mapping[key][0] for key in norm_to_layer_mapping.keys()]
+        hook_modules = []
+        hook_module_names = []
+
+        for index, name in enumerate(hook_module_names_tmp):
+            module = self.get_module(name)
+            if isinstance(module, torch.nn.Linear) or isinstance(module, torch.nn.Conv2d):
+                hook_modules.append(module)
+                hook_module_names.append(name)
+
+        self.add_observer(hook_modules, hook_module_names)
+        self.calibation()
+        self.remove_observer()
+
+
+    def get_layer_mapping(self):
+        tg = TorchGraphAnalysis()
+        for batch in tqdm(self.dataset):
+            example_inputs = batch['input_ids'].to(self.device).unsqueeze(0)
+            break
+
+        layer_mapping = tg.get_norm_to_layer_mapping(self.model, example_inputs)
+        del tg
+        return layer_mapping
 
 
 class TorchGraphAnalysis:
@@ -27,7 +144,7 @@ class TorchGraphAnalysis:
         self.norm_layers = ["layer_norm"]  ##TODO,suppport more norm
 
     def trace(self, model, dummy_input):
-        traced_model = torch.jit.trace(model, dummy_input, strict=False)##TODO add a try catch
+        traced_model = torch.jit.trace(model, dummy_input, strict=False)  ##TODO add a try catch
         traced_model = torch.jit.freeze(traced_model.eval())
         self.traced_model = traced_model  ##TODO,need to check memory usage
 
@@ -77,7 +194,7 @@ class TorchGraphAnalysis:
         return norm_mapping
 
     def get_norm_to_layer_mapping(self, model, example_input):
-        self.model = model
+        ##self.model = model
         self.trace(model, example_input)
         nodes_types = self.get_nodes(["linear"])
         nodes = [node_type[0] for node_type in nodes_types]
@@ -101,7 +218,6 @@ class TorchGraphAnalysis:
     #     node.scope
 
 
-
 class Evaluator:
     def __init__(self, dataset, tokenizer, device):
         self.dataset = dataset
@@ -117,23 +233,23 @@ class Evaluator:
         self.dataset.set_format(type='torch', columns=['input_ids'])
         self.trace_analysis = TorchGraphAnalysis()
 
-    def trace_model(self, model):
-        model.eval()
-        # The task is to predict the last word of the input.
-
-        for batch in tqdm(self.dataset):
-            input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
-            label = input_ids[:, -1]
-            attention_mask = torch.ones_like(input_ids)
-
-            example_input = [input_ids]
-            self.trace_analysis = TorchGraphAnalysis()
-            norm_to_layer_mapping = self.trace_analysis.get_norm_to_layer_mapping(model, example_input)
-
-
+    # def trace_model(self, model):
+    #     model.eval()
+    #     # The task is to predict the last word of the input.
+    #
+    #     for batch in tqdm(self.dataset):
+    #         input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
+    #         label = input_ids[:, -1]
+    #         attention_mask = torch.ones_like(input_ids)
+    #
+    #         example_input = [input_ids]
+    #         self.trace_analysis = TorchGraphAnalysis()
+    #         norm_to_layer_mapping = self.trace_analysis.get_norm_to_layer_mapping(model, example_input)
 
     @torch.no_grad()
     def evaluate(self, model):
+        sq = SmoothQuant(model, self.dataset)
+        sq.transform()
         model.eval()
         # The task is to predict the last word of the input.
         total, hit = 0, 0
@@ -145,7 +261,7 @@ class Evaluator:
             if hasattr(outputs, "logits"):
                 last_token_logits = outputs.logits[:, -2, :]
             else:
-                last_token_logits= outputs[0][:, -2, :]
+                last_token_logits = outputs[0][:, -2, :]
             pred = last_token_logits.argmax(dim=-1)
             total += label.size(0)
             hit += (pred == label).sum().item()
@@ -167,7 +283,7 @@ evaluator = Evaluator(dataset, tokenizer, 'cuda')
 model_fp16 = transformers.AutoModelForCausalLM.from_pretrained(model_name,
                                                                ##torch_dtype=torch.float16,
                                                                device_map='auto',
-                                                               torchscript=True##TODO, if false, trace will fail
+                                                               torchscript=True  ##TODO, if false, trace will fail
                                                                )
 
 # evaluator.trace_model(model_fp16)
