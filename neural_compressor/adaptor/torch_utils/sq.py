@@ -1,17 +1,14 @@
 import torch
-import transformers
-from tqdm import tqdm
-from datasets import load_dataset
-import sys
 
-sys.path.append('./')
+from tqdm import tqdm
+
 
 class SmoothQuant:
-    def __init__(self, model, dataset, device="cpu"):
+    def __init__(self, model, dataloader, device="cpu"):
         self.model = model.to(device)
         self.model.eval()
         self.device = device
-        self.dataset = dataset
+        self.dataset = dataloader
         self.input_maxs = {}
         self.calib_cnt = 100
 
@@ -51,26 +48,26 @@ class SmoothQuant:
         for hook_handle in self.hook_handles:
             hook_handle.remove()
 
-    ##https://gist.github.com/sailfish009/28b54c8aa6398148a6358b8f03c0b611
-    def percentile(t: torch.tensor, q: float):
-        """
-        Return the ``q``-th percentile of the flattened input tensor's data.
-
-        CAUTION:
-         * Needs PyTorch >= 1.1.0, as ``torch.kthvalue()`` is used.
-         * Values are not interpolated, which corresponds to
-           ``numpy.percentile(..., interpolation="nearest")``.
-
-        :param t: Input tensor.
-        :param q: Percentile to compute, which must be between 0 and 100 inclusive.
-        :return: Resulting value (scalar).
-        """
-        # Note that ``kthvalue()`` works one-based, i.e. the first sorted value
-        # indeed corresponds to k=1, not k=0! Use float(q) instead of q directly,
-        # so that ``round()`` returns an integer, even if q is a np.float32.
-        k = 1 + round(.01 * float(q) * (t.numel() - 1))
-        result = t.view(-1).kthvalue(k).values.item()
-        return result
+    # ##https://gist.github.com/sailfish009/28b54c8aa6398148a6358b8f03c0b611
+    # def percentile(t: torch.tensor, q: float):
+    #     """
+    #     Return the ``q``-th percentile of the flattened input tensor's data.
+    #
+    #     CAUTION:
+    #      * Needs PyTorch >= 1.1.0, as ``torch.kthvalue()`` is used.
+    #      * Values are not interpolated, which corresponds to
+    #        ``numpy.percentile(..., interpolation="nearest")``.
+    #
+    #     :param t: Input tensor.
+    #     :param q: Percentile to compute, which must be between 0 and 100 inclusive.
+    #     :return: Resulting value (scalar).
+    #     """
+    #     # Note that ``kthvalue()`` works one-based, i.e. the first sorted value
+    #     # indeed corresponds to k=1, not k=0! Use float(q) instead of q directly,
+    #     # so that ``round()`` returns an integer, even if q is a np.float32.
+    #     k = 1 + round(.01 * float(q) * (t.numel() - 1))
+    #     result = t.view(-1).kthvalue(k).values.item()
+    #     return result
 
     def calibration(self):
         norm_to_layer_mapping = self.get_layer_mapping()
@@ -92,7 +89,8 @@ class SmoothQuant:
         self.add_observer(hook_modules)
         self.dump_min_max()
         self.remove_observer()
-        return hook_modules, layer_to_norm_mapping, norm_to_layer_mapping
+        return norm_to_layer_mapping
+
 
     def dump_min_max(self, calibration_method="min_max"):
         cnt = 1
@@ -112,7 +110,7 @@ class SmoothQuant:
             val = torch.max(torch.abs(val), dim=0)[0]  ##FIXME should add abs
             self.input_maxs[key] = val
 
-    def adjust_parameters(self, hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, input_maxs, alpha=0.5):
+    def adjust_parameters(self, norm_to_layer_mapping, input_maxs, alpha=0.5):
         norm_to_input_maxs = {}
         for key in norm_to_layer_mapping.keys():
             layer_name = norm_to_layer_mapping[key][0]
@@ -152,10 +150,10 @@ class SmoothQuant:
             for layer in weights_layers:
                 layer.weight *= scale
 
-    def transform(self):
+    def transform(self, alpha):
         with torch.no_grad():
             hook_modules, layer_to_norm_mapping, norm_to_layer_mapping = self.calibration()
-            self.adjust_parameters(hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, self.input_maxs)
+            self.adjust_parameters(norm_to_layer_mapping, self.input_maxs)
             return self.model
 
     def get_layer_mapping(self):
@@ -163,8 +161,10 @@ class SmoothQuant:
         for batch in tqdm(self.dataset):
             example_inputs = batch['input_ids'].to(self.device).unsqueeze(0)
             break
-
-        layer_mapping = tg.get_norm_to_layer_mapping(self.model, example_inputs)
+        try:
+            layer_mapping = tg.get_norm_to_layer_mapping(self.model, example_inputs)
+        except:
+            layer_mapping = {}##todo, if strict mode=False, we hook all the mat/conv layer insert mul layer
         del tg
         return layer_mapping
 
@@ -252,98 +252,3 @@ class TorchGraphAnalysis:
                 norm_to_layer_mapping[norm_name] = [layer_name]
         del self.traced_model
         return norm_to_layer_mapping
-
-class Evaluator:
-    def __init__(self, dataset, tokenizer, device):
-        self.dataset = dataset
-        self.tokenizer = tokenizer
-        self.device = device
-
-        # tokenize the dataset
-        def tokenize_function(examples):
-            example = self.tokenizer(examples['text'])
-            return example
-
-        self.dataset = self.dataset.map(tokenize_function, batched=True)
-        self.dataset.set_format(type='torch', columns=['input_ids'])
-
-    @torch.no_grad()
-    def evaluate(self, model):
-        model.eval()
-        # The task is to predict the last word of the input.
-        total, hit = 0, 0
-        for batch in tqdm(self.dataset):
-            # if index == 100:
-            #     break
-            input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
-            label = input_ids[:, -1]
-            # attention_mask = torch.ones_like(input_ids)
-            outputs = model(input_ids)
-            last_token_logits = outputs[0][:, -2, :]
-            pred = last_token_logits.argmax(dim=-1)
-            total += label.size(0)
-            hit += (pred == label).sum().item()
-        acc = hit / total
-        return acc
-
-
-class CalibDataloader():
-    def __init__(self, dataset, tokenizer, device):
-        self.dataset = dataset
-        self.tokenizer = tokenizer
-        self.device = device
-        self.batch_size = 1
-
-        # tokenize the dataset
-        def tokenize_function(examples):
-            example = self.tokenizer(examples['text'])
-            return example
-
-        self.dataset = self.dataset.map(tokenize_function, batched=True)
-        self.dataset.set_format(type='torch', columns=['input_ids'])
-
-    def __iter__(self):
-        for batch in self.dataset:
-            input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
-            yield input_ids
-
-
-model_name = "bigscience/bloom-560m"
-
-tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
-dataset = load_dataset('lambada', split='validation')
-dataset = dataset.shuffle(seed=42)
-calib_dataloader = CalibDataloader(dataset, tokenizer, 'cpu')
-
-evaluator = Evaluator(dataset, tokenizer, 'cpu')
-
-model = transformers.AutoModelForCausalLM.from_pretrained(
-    model_name,
-    torchscript=True,  # torchscript will force `return_dict=False` to avoid jit errors
-)
-
-
-# tokenize the dataset
-def tokenize_function(examples):
-    global  tokenizer
-    example = tokenizer(examples['text'])
-    return example
-
-my_dataset = dataset.map(tokenize_function, batched=True)
-my_dataset.set_format(type='torch', columns=['input_ids'])
-
-sq = SmoothQuant(model, my_dataset)
-model = sq.transform()
-def eval_func(model):
-    acc = evaluator.evaluate(model)
-    return acc
-
-
-from neural_compressor import PostTrainingQuantConfig
-from neural_compressor import quantization
-
-conf = PostTrainingQuantConfig(backend='ipex')
-q_model = quantization.fit(model,
-                           conf,
-                           calib_dataloader=calib_dataloader,
-                           eval_func=eval_func)

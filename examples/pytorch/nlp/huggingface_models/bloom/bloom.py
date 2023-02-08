@@ -13,14 +13,13 @@ sys.path.append('./')
 
 
 class SmoothQuant:
-    def __init__(self, model, dataset, device="cuda"):
-        self.model = model
+    def __init__(self, model, dataset, device="cpu"):
+        self.model = model.to(device)
         self.model.eval()
         self.device = device
-        self.model = self.model.to(self.device)
         self.dataset = dataset
         self.input_maxs = {}
-        self.calib_cnt = 4
+        self.calib_cnt = 100
 
     def get_module(self, key):
         attrs = key.split('.')
@@ -116,11 +115,10 @@ class SmoothQuant:
         for key in self.input_maxs.keys():
             val = self.input_maxs[key]
             val = torch.stack(val, dim=0)
-            val = torch.max(torch.abs(val), dim=0)[0]##FIXME should add abs
+            val = torch.max(torch.abs(val), dim=0)[0]  ##FIXME should add abs
             self.input_maxs[key] = val
 
-    def adjust_weights(self, hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, input_maxs, alpha=0.5):
-
+    def adjust_parameters(self, hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, input_maxs, alpha=0.5):
         norm_to_input_maxs = {}
         for key in norm_to_layer_mapping.keys():
             layer_name = norm_to_layer_mapping[key][0]
@@ -131,7 +129,7 @@ class SmoothQuant:
             layers = norm_to_layer_mapping[key]
             weights = []
             for layer in layers:
-                weight = self.get_module(layer).weight  ##TODO oc*ic, transposed conv
+                weight = self.get_module(layer).weight  ##TODO oc*ic, support transposed conv
                 if len(weight.shape) == 4:
                     weight = weight.permute(0, 2, 3, 1)
                     weight = weight.reshpae(-1, weight.shape[-1])
@@ -139,7 +137,7 @@ class SmoothQuant:
 
             weights = torch.cat(weights, dim=0)
 
-            weight_max_per_channel = torch.max(torch.abs(weights), dim=0)[0]##FIXME abs
+            weight_max_per_channel = torch.max(torch.abs(weights), dim=0)[0]  ##FIXME abs
             input_power = torch.pow(input_max, alpha)
             print(max(input_max), min(input_power))
             weight_power = torch.pow(weight_max_per_channel, 1 - alpha)
@@ -161,11 +159,10 @@ class SmoothQuant:
                 layer.weight *= scale
 
     def transform(self):
-
-        hook_modules, layer_to_norm_mapping, norm_to_layer_mapping = self.calibration()
-
-        self.adjust_weights(hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, self.input_maxs)
-        return self.model
+        with torch.no_grad():
+            hook_modules, layer_to_norm_mapping, norm_to_layer_mapping = self.calibration()
+            self.adjust_parameters(hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, self.input_maxs)
+            return self.model
 
     def get_layer_mapping(self):
         tg = TorchGraphAnalysis()
@@ -185,8 +182,10 @@ class TorchGraphAnalysis:
             "aten::layer_norm": "layer_norm",
             "aten::to": "to",
         }
-        self.skip_layers_to_find_norm = ["aten::to", "aten::size",
-                                         "prim::NumToTensor"]  ##TODO, current skip layer may be incomplete
+        self.skip_layers_to_find_norm = ["aten::to",
+                                         ##"aten::size",
+                                         ##"prim::NumToTensor"
+                                         ]  ##TODO, current skip layer may be incomplete, matmul/conv->Relu/leakyRelu->Matmul/conv is an option
         self.skip_layers_to_find_norm = ["aten::to"]
         self.norm_layers = ["layer_norm"]  ##TODO,suppport more norm
 
@@ -260,10 +259,6 @@ class TorchGraphAnalysis:
         del self.traced_model
         return norm_to_layer_mapping
 
-    #
-    # def get_orig_module_name(self, node):
-    #     node.scope
-
 
 class Evaluator:
     def __init__(self, dataset, tokenizer, device):
@@ -296,7 +291,7 @@ class Evaluator:
     @torch.no_grad()
     def evaluate(self, model):
         sq = SmoothQuant(model, self.dataset)
-        model = sq.transform()
+        # model = sq.transform()
         model.eval()
         # The task is to predict the last word of the input.
         total, hit = 0, 0
@@ -304,7 +299,7 @@ class Evaluator:
             input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
             label = input_ids[:, -1]
             attention_mask = torch.ones_like(input_ids)
-            outputs = model(input_ids, attention_mask=attention_mask)
+            outputs = model(input_ids)
             if hasattr(outputs, "logits"):
                 last_token_logits = outputs.logits[:, -2, :]
             else:
