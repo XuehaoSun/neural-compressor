@@ -19,7 +19,7 @@ class SmoothQuant:
         self.device = device
         self.model = self.model.to(self.device)
         self.dataset = dataset
-        self.per_channel_info = {}
+        self.input_maxs = {}
         self.calib_cnt = 4
 
     def get_module(self, key):
@@ -35,26 +35,26 @@ class SmoothQuant:
 
     def save_input_pc_hook(self, name):
         def save_input_hook(model, inputs, outputs):
-            if name not in self.per_channel_info.keys():
-                self.per_channel_info[name] = []
+            if name not in self.input_maxs.keys():
+                self.input_maxs[name] = []
             input = inputs[0]
             ##TODO check input channel is correct
             if len(model.weight.shape) == 4:  ##conv3d or conv1d not suppoted now, need better way
                 input = input.permute(0, 2, 3, 1)
             input = input.reshape(-1, input.shape[-1])
             max_tensor = torch.max(input, dim=0)[0]
-            self.per_channel_info[name].append(max_tensor)
+            self.input_maxs[name].append(max_tensor)
 
         return save_input_hook
 
-    def add_observer(self, modules, names):
+    def add_observer(self, modules):
         self.hook_handles = []
-        for index, module in enumerate(modules):
-            hook_func = self.save_input_pc_hook(names[index])
-            hook_handle = module.register_forward_hook(hook_func)
+        for key in modules.keys():
+            hook_func = self.save_input_pc_hook(key)
+            hook_handle = modules[key].register_forward_hook(hook_func)
             self.hook_handles.append(hook_handle)
 
-    def remove_observer(self, modules):
+    def remove_observer(self):
         for hook_handle in self.hook_handles:
             hook_handle.remove()
 
@@ -79,7 +79,29 @@ class SmoothQuant:
         result = t.view(-1).kthvalue(k).values.item()
         return result
 
-    def calibation(self, calibation_method="min_max"):
+    def calibration(self):
+        norm_to_layer_mapping = self.get_layer_mapping()
+        layer_to_norm_mapping = {}
+        for key in norm_to_layer_mapping:
+            for layer_name in norm_to_layer_mapping[key]:
+                layer_to_norm_mapping[layer_name] = key
+        hook_module_names_tmp = [norm_to_layer_mapping[key][0] for key in norm_to_layer_mapping.keys()]
+        hook_modules = {}
+
+        for index, name in enumerate(hook_module_names_tmp):
+            module = self.get_module(name)
+            if isinstance(module, torch.nn.Linear) or isinstance(module,
+                                                                 torch.nn.Conv2d):  ##TODO remove group conv later
+                hook_modules[name] = module
+        if len(hook_modules) == 0:
+            return self.model
+
+        self.add_observer(hook_modules)
+        self.dump_min_max()
+        self.remove_observer()
+        return hook_modules, layer_to_norm_mapping, norm_to_layer_mapping
+
+    def dump_min_max(self, calibration_method="min_max"):
         cnt = 1
         for batch in tqdm(self.dataset):
             input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
@@ -91,34 +113,59 @@ class SmoothQuant:
             if cnt > self.calib_cnt:
                 break
         ##stack
-        for key in self.per_channel_info.keys():
-            val = self.per_channel_info[key]
+        for key in self.input_maxs.keys():
+            val = self.input_maxs[key]
             val = torch.stack(val, dim=0)
-            val = torch.max(val, dim=0)[0]
-            self.per_channel_info[key] = val
+            val = torch.max(torch.abs(val), dim=0)[0]##FIXME should add abs
+            self.input_maxs[key] = val
 
-    def cal_scales(self, hook_modules, hook_module_names):
-        pass
+    def adjust_weights(self, hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, input_maxs, alpha=0.5):
+
+        norm_to_input_maxs = {}
+        for key in norm_to_layer_mapping.keys():
+            layer_name = norm_to_layer_mapping[key][0]
+            norm_to_input_maxs[key] = input_maxs[layer_name]
+
+        for index, key in enumerate(norm_to_layer_mapping.keys()):
+            input_max = norm_to_input_maxs[key]
+            layers = norm_to_layer_mapping[key]
+            weights = []
+            for layer in layers:
+                weight = self.get_module(layer).weight  ##TODO oc*ic, transposed conv
+                if len(weight.shape) == 4:
+                    weight = weight.permute(0, 2, 3, 1)
+                    weight = weight.reshpae(-1, weight.shape[-1])
+                weights.append(weight)
+
+            weights = torch.cat(weights, dim=0)
+
+            weight_max_per_channel = torch.max(torch.abs(weights), dim=0)[0]##FIXME abs
+            input_power = torch.pow(input_max, alpha)
+            print(max(input_max), min(input_power))
+            weight_power = torch.pow(weight_max_per_channel, 1 - alpha)
+
+            ##adjust parameters
+            scale = torch.clip(input_power / weight_power, min=1e-5)
+
+            norm_layer = self.get_module(key)
+            weights_layers = []
+            layers = norm_to_layer_mapping[key]
+
+            for layer in layers:
+                layer = self.get_module(layer)
+                weights_layers.append(layer)
+            ##TODO if norm does not have affine, need to add one
+            norm_layer.weight /= scale
+            norm_layer.bias /= scale
+            for layer in weights_layers:
+                layer.weight *= scale
 
     def transform(self):
-        norm_to_layer_mapping = self.get_layer_mapping()
-        layer_to_norm_mapping ={}
-        for key in norm_to_layer_mapping:
-            layer_to_norm_mapping[norm_to_layer_mapping[key]]=key
-        hook_module_names_tmp = [norm_to_layer_mapping[key][0] for key in norm_to_layer_mapping.keys()]
-        hook_modules = []
-        hook_module_names = []
 
-        for index, name in enumerate(hook_module_names_tmp):
-            module = self.get_module(name)
-            if isinstance(module, torch.nn.Linear) or isinstance(module, torch.nn.Conv2d):
-                hook_modules.append(module)
-                hook_module_names.append(name)
+        hook_modules, layer_to_norm_mapping, norm_to_layer_mapping = self.calibration()
 
-        self.add_observer(hook_modules, hook_module_names)
-        self.calibation()
-        self.remove_observer()
-
+        self.adjust_weights(hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, self.input_maxs)
+        return self.model
 
     def get_layer_mapping(self):
         tg = TorchGraphAnalysis()
@@ -249,7 +296,7 @@ class Evaluator:
     @torch.no_grad()
     def evaluate(self, model):
         sq = SmoothQuant(model, self.dataset)
-        sq.transform()
+        model = sq.transform()
         model.eval()
         # The task is to predict the last word of the input.
         total, hit = 0, 0
