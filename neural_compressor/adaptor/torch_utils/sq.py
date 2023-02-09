@@ -1,16 +1,43 @@
 import torch
-
+import transformers
+from transformers.models.opt.modeling_opt import OPTAttention, OPTDecoderLayer, OPTForCausalLM
+from transformers import GPT2Tokenizer
+import torch
 from tqdm import tqdm
+import os
+import sys
+
+
+def model_forward(model, dataloader, sample_cnt):
+    try:
+        cnt = 0
+        for idx, (input, label) in enumerate(dataloader):
+            output = model(input)
+            cnt += len(input)
+            if cnt >= sample_cnt:
+                break
+    except Exception as e:
+        cnt = 0
+        for idx, input in enumerate(dataloader):
+            out = model(input)
+            cnt += len(input)
+            if cnt >= sample_cnt:
+                break
 
 
 class SmoothQuant:
-    def __init__(self, model, dataloader, device="cpu"):
-        self.model = model.to(device)
+    def __init__(self, model: torch.nn.Module, dataloader):
+        self.model = model
+        device = self.get_device()
+        self.model = self.model.to(device)
         self.model.eval()
         self.device = device
-        self.dataset = dataloader
+        self.dataloader = dataloader
         self.input_maxs = {}
-        self.calib_cnt = 100
+
+    def get_device(self):
+        for _, p in self.model.named_parameters():
+            return p.data.device
 
     def get_module(self, key):
         attrs = key.split('.')
@@ -69,7 +96,7 @@ class SmoothQuant:
     #     result = t.view(-1).kthvalue(k).values.item()
     #     return result
 
-    def calibration(self):
+    def calibration(self, calib_size):
         norm_to_layer_mapping = self.get_layer_mapping()
         layer_to_norm_mapping = {}
         for key in norm_to_layer_mapping:
@@ -81,28 +108,24 @@ class SmoothQuant:
         for index, name in enumerate(hook_module_names_tmp):
             module = self.get_module(name)
             if isinstance(module, torch.nn.Linear) or isinstance(module,
-                                                                 torch.nn.Conv2d):  ##TODO remove group conv later
+                                                                 torch.nn.Conv2d):
+                if isinstance(module, torch.nn.Conv2d):
+                    if module.groups > 1 and module.in_channels == module.out_channels and module.groups == module.in_channels:
+                        pass
+                    else:
+                        continue
+
                 hook_modules[name] = module
         if len(hook_modules) == 0:
             return self.model
 
         self.add_observer(hook_modules)
-        self.dump_min_max()
+        self.dump_min_max(calib_size=calib_size)
         self.remove_observer()
-        return norm_to_layer_mapping
+        return hook_modules, layer_to_norm_mapping, norm_to_layer_mapping
 
-
-    def dump_min_max(self, calibration_method="min_max"):
-        cnt = 1
-        for batch in tqdm(self.dataset):
-            input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
-
-            label = input_ids[:, -1]
-            attention_mask = torch.ones_like(input_ids)
-            self.model(input_ids, attention_mask=attention_mask)
-            cnt += len(batch)
-            if cnt > self.calib_cnt:
-                break
+    def dump_min_max(self, calibration_method="min_max", calib_size=100):
+        model_forward(self.model, self.dataloader, calib_size)
         ##stack
         for key in self.input_maxs.keys():
             val = self.input_maxs[key]
@@ -150,22 +173,21 @@ class SmoothQuant:
             for layer in weights_layers:
                 layer.weight *= scale
 
-    def transform(self, alpha):
+    def transform(self, alpha=0.5, calb_size=100):
         with torch.no_grad():
-            hook_modules, layer_to_norm_mapping, norm_to_layer_mapping = self.calibration()
-            self.adjust_parameters(norm_to_layer_mapping, self.input_maxs)
+            hook_modules, layer_to_norm_mapping, norm_to_layer_mapping = self.calibration(calb_size)
+            self.adjust_parameters(norm_to_layer_mapping, self.input_maxs, alpha)
             return self.model
 
     def get_layer_mapping(self):
         tg = TorchGraphAnalysis()
-        for batch in tqdm(self.dataset):
-            example_inputs = batch['input_ids'].to(self.device).unsqueeze(0)
-            break
-        try:
-            layer_mapping = tg.get_norm_to_layer_mapping(self.model, example_inputs)
-        except:
-            layer_mapping = {}##todo, if strict mode=False, we hook all the mat/conv layer insert mul layer
-        del tg
+        for idx, input in enumerate(self.dataloader):
+            example_inputs = input
+        # for batch in (self.dataset):
+        #     example_inputs = batch['input_ids'].to(self.device).unsqueeze(0)
+        #     break
+
+        layer_mapping = tg.get_norm_to_layer_mapping(self.model, example_inputs)
         return layer_mapping
 
 
@@ -176,16 +198,25 @@ class TorchGraphAnalysis:
             "aten::layer_norm": "layer_norm",
             "aten::to": "to",
         }
-        self.skip_layers_to_find_norm = ["aten::to",
-                                         ##"aten::size",
-                                         ##"prim::NumToTensor"
-                                         ]  ##TODO, current skip layer may be incomplete, matmul/conv->Relu/leakyRelu->Matmul/conv is an option
-        self.skip_layers_to_find_norm = ["aten::to"]
-        self.norm_layers = ["layer_norm"]  ##TODO,suppport more norm
+        ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete, matmul/conv->Relu/leakyRelu->Matmul/conv is an option
+        self.skip_ops_to_find_abosrb = ["aten::to",
+                                        ##"aten::size",
+                                        ##"prim::NumToTensor"
+                                        ]
+        # self.skip_ops_to_find_abosrb = ["aten::to"]
+        self.could_absorb_layers = ["layer_norm"]  ##TODO,suppport more norm
 
     def trace(self, model, dummy_input):
-        traced_model = torch.jit.trace(model, dummy_input, strict=False)  ##TODO add a try catch
-        traced_model = torch.jit.freeze(traced_model.eval())
+        try:
+            traced_model = torch.jit.trace(model, dummy_input, strict=False)  ##TODO polish the code
+            traced_model = torch.jit.freeze(traced_model.eval())
+        except:
+            try:
+                traced_model = torch.jit.trace(model, dummy_input[0], strict=False)
+                traced_model = torch.jit.freeze(traced_model.eval())
+            except:
+                assert False, "can't trace the model"
+
         self.traced_model = traced_model  ##TODO,need to check memory usage
 
     def kind_to_op_type(self, kind):
@@ -194,12 +225,12 @@ class TorchGraphAnalysis:
         else:
             return kind.split("::")[-1]
 
-    def op_type_to_kind(self, op_type):
-        for key in self.aten_to_op.keys():
-            if op_type == self.aten_to_op[key]:
-                return key
-
-        return "aten::" + str(op_type)  ##not correct
+    # def op_type_to_kind(self, op_type):
+    #     for key in self.aten_to_op.keys():
+    #         if op_type == self.aten_to_op[key]:
+    #             return key
+    #
+    #     return "aten::" + str(op_type)  ##not correct
 
     def get_parent(self, node):
         if node.inputs() == None:
@@ -223,10 +254,10 @@ class TorchGraphAnalysis:
         for node in nodes:
             parent = self.get_parent(node)
             while 1:
-                if parent.kind() in self.skip_layers_to_find_norm:
+                if parent.kind() in self.skip_ops_to_find_abosrb:
                     parent = self.get_parent(parent)
                     continue
-                if self.kind_to_op_type(parent.kind()) in self.norm_layers:
+                if self.kind_to_op_type(parent.kind()) in self.could_absorb_layers:
                     norm_mapping.append(parent)
                 else:
                     norm_mapping.append(None)
