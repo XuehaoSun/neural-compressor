@@ -353,6 +353,7 @@ def main():
         "cache_dir": model_args.cache_dir,
         "revision": model_args.model_revision,
         "use_auth_token": True if model_args.use_auth_token else None,
+        'return_dict': False ## for trace
     }
     if model_args.config_name:
         config = AutoConfig.from_pretrained(model_args.config_name, **config_kwargs)
@@ -381,7 +382,8 @@ def main():
             "You are instantiating a new tokenizer from scratch. This is not supported by this script."
             "You can do it from another script, save it, and load it from here, using --tokenizer_name."
         )
-
+    from transformers.models.gptj import GPTJForCausalLM
+    ##model = GPTJForCausalLM(config)
 
     if model_args.model_name_or_path:
         model = AutoModelForCausalLM.from_pretrained(
