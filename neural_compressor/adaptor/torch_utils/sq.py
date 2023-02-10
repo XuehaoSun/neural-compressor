@@ -12,7 +12,7 @@ def model_forward(model, dataloader, sample_cnt):
     except Exception as e:
         cnt = 0
         for idx, input in enumerate(dataloader):
-            if isinstance(input,dict):
+            if isinstance(input, dict):
                 out = model(**input)
             else:
                 out = model(input)
@@ -33,6 +33,7 @@ class SmoothQuant:
         self.traced_model = traced_model
         if self.traced_model == None:
             self.traced_model = self.model
+        self.transform_cnt = 0
 
     def get_device(self):
         for _, p in self.model.named_parameters():
@@ -173,13 +174,13 @@ class SmoothQuant:
                 layer.weight *= scale
 
     def transform(self, alpha=0.5, calib_size=100):
-        ##return self.model
+        if self.transform_cnt > 0:
+            return self.model
         with torch.no_grad():
-            try:
-                hook_modules, layer_to_absorb, absorb_to_layer = self.calibration(calib_size)
-            except:
-                return self.model
+            hook_modules, layer_to_absorb, absorb_to_layer = self.calibration(calib_size)
+
             self.adjust_parameters(absorb_to_layer, self.input_maxs, alpha)
+            self.transform_cnt += 1
             return self.model
 
     def get_layer_mapping(self):
@@ -210,9 +211,11 @@ class TorchGraphAnalysis:
         self.could_absorb_layers = ["layer_norm"]  ##TODO,suppport more norm
 
     def trace(self, model, dummy_input):
+        ##print(dummy_input)
+        traced_model = None
         if isinstance(dummy_input, dict):
             try:
-                traced_model = torch.jit.trace(model, dummy_input["input_index"], strict=False)
+                traced_model = torch.jit.trace(model, dummy_input["input_ids"], strict=False)
                 traced_model = torch.jit.freeze(traced_model.eval())
             except:
                 pass
@@ -275,7 +278,6 @@ class TorchGraphAnalysis:
         return norm_mapping
 
     def get_absorb_to_layer(self, model, example_input):
-        ##self.model = model
         self.trace(model, example_input)
         nodes_types = self.get_nodes(["linear"])
         nodes = [node_type[0] for node_type in nodes_types]
