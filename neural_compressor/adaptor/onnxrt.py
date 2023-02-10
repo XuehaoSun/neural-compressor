@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # pylint: disable=no-member
-
+from memory_profiler import profile 
 import os
 import copy
 import logging
@@ -159,7 +159,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
             format = QuantizationMode.IntegerOps
 
         self.quantizable_ops = self._query_quantizable_ops(model.model)
-        tmp_model = copy.deepcopy(model)
+        tmp_model = model
 
         quantize_config = self._cfg_to_quantize_config(tune_cfg)
         iterations = tune_cfg.get('calib_iteration', 1)
@@ -207,7 +207,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
             quantize_params = None
         self.quantize_params = quantize_params
         from neural_compressor.adaptor.ox_utils.quantizer import Quantizer
-        quantizer = Quantizer(copy.deepcopy(model),
+        quantizer = Quantizer(tmp_model,
             quantize_config,
             format,
             self.static,
@@ -523,7 +523,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
             model = self._revert_conv_add_fusion(model)
         model = split_shared_bias(model)
         model.topological_sort()
-        self.pre_optimized_model = copy.deepcopy(model)
+        self.pre_optimized_model = model
 
     def _revert_conv_add_fusion(self, model):
         from onnx import numpy_helper
