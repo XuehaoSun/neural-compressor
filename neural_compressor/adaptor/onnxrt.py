@@ -15,7 +15,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 # pylint: disable=no-member
-from memory_profiler import profile 
+
 import os
 import copy
 import logging
@@ -379,8 +379,8 @@ class ONNXRUNTIMEAdaptor(Adaptor):
                   black_nodes=black_nodes, white_nodes=white_nodes, \
                   iterations=list(range(0, quantize_config['calib_iteration'])),
                   backend=self.backend, reduce_range=self.reduce_range)
-        self.min_max = augment.dump_minmax()
-        quantize_params = augment.dump_calibration(quantize_config)
+        # self.min_max = augment.dump_minmax()
+        self.min_max, quantize_params = augment.dump_calibration(quantize_config)
         return quantize_params
 
     def inspect_tensor(self, model, dataloader, op_list=[],

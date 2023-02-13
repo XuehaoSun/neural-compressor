@@ -21,7 +21,7 @@
 # license information.
 # --------------------------------------------------------------------------
 """Calibration for onnx models."""
-
+from memory_profiler import profile 
 import copy
 import logging
 import sys
@@ -85,6 +85,7 @@ class ONNXRTAugment:
         self.reduce_range = reduce_range
 
     def augment_graph(self, activation_only=False, weight_only=False):
+        print('augment_graph')
         """Augment_graph.
         
         Adds nodes to all quantization_candidates op type nodes in model and
@@ -203,6 +204,7 @@ class ONNXRTAugment:
                             all_tensors_to_one_file=True,
                             location="weights.pb",
                             convert_attribute=False)
+        del model
 
     def get_intermediate_outputs(self, calib_mode=None):
         """Gather intermediate model outputs after running inference."""
@@ -391,7 +393,8 @@ class ONNXRTAugment:
                                         a minimum of all values and the second element 
                                         is a maximum of all values. Defaults to 'naive'.
         """
-        return self.calculate_quantization_params(q_config, self.dump_minmax(calib_mode))
+        min_max = self.dump_minmax(calib_mode)
+        return min_max, self.calculate_quantization_params(q_config, min_max)
 
     def calculate_quantization_params(self, q_config, quantization_thresholds):
         """Given quantization thresholds, calculate the quantization params.
