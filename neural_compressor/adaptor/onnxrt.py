@@ -61,6 +61,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
         self.static = framework_specific_info["approach"] == "post_training_static_quant"
         self.dynamic = framework_specific_info["approach"] == "post_training_dynamic_quant"
         self.backend = PROVIDERS[framework_specific_info["backend"]]
+        self.performance_only = framework_specific_info.get("performance_only", False)
 
         if self.backend not in ort.get_all_providers():
             logger.warning("{} backend is not supported in current environment, "
@@ -85,7 +86,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
                 if "format" in framework_specific_info and \
                     framework_specific_info["format"].lower() == 'qdq':
                     logger.warning("Dynamic approach doesn't support QDQ format.")
- 
+
         self.work_space = framework_specific_info["workspace_path"]
         self.graph_optimization = framework_specific_info["graph_optimization"]
         self.recipes = deep_get(framework_specific_info, 'recipes', {})

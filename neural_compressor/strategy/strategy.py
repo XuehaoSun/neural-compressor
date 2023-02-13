@@ -186,7 +186,7 @@ class TuneStrategy(object):
 
     def traverse(self):
         """Traverse the tuning space.
-        
+
         The main traverse logic which could be override by some concrete strategy which needs more hooks.
         """
         if not (self.cfg.evaluation and self.cfg.evaluation.accuracy and \
@@ -195,6 +195,7 @@ class TuneStrategy(object):
             logger.info("Neither evaluation function nor metric is defined." \
                         " Generate a quantized model with default quantization configuration.")
             self.cfg.tuning.exit_policy.performance_only = True
+            self.adaptor.performance_only = True
             logger.info("Force setting 'tuning.exit_policy.performance_only = True'.")
             logger.info("Generate a fake evaluation function.")
             self.eval_func = self._fake_eval_func
@@ -557,7 +558,8 @@ class TuneStrategy(object):
     def _set_framework_info(self, q_dataloader, q_func=None):
         framework_specific_info = {'device': self.cfg.device,
                                    'approach': self.cfg.quantization.approach,
-                                   'random_seed': self.cfg.tuning.random_seed}
+                                   'random_seed': self.cfg.tuning.random_seed,
+                                   'performance_only': self.cfg.tuning.exit_policy.performance_only,}
         framework = self.cfg.model.framework.lower()
         framework_specific_info.update({'backend': self.cfg.model.get('backend', 'default')})
         framework_specific_info.update({'format': self.cfg.model.get('quant_format', 'default')})
@@ -571,7 +573,6 @@ class TuneStrategy(object):
                  "outputs": self.cfg.model.outputs,
                  'workspace_path': self.cfg.tuning.workspace.path,
                  'recipes': self.cfg.quantization.recipes,
-                 'performance_only': self.cfg.tuning.exit_policy.performance_only,
                  'use_bf16': self.cfg.use_bf16 if self.cfg.use_bf16 is not None else False})
             if self.cfg.model.backend == 'itex':
                 self.cfg.model.framework = 'tensorflow_itex'
