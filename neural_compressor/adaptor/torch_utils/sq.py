@@ -144,7 +144,7 @@ class SmoothQuant:
 
     def scale_layer_weight(self, layer_name, scale: torch.Tensor):
         layer = self.get_module(layer_name)
-        if isinstance(layer, torch.nn.Conv2d):
+        if isinstance(layer, torch.nn.Conv2d) or isinstance(layer, torch.nn.ConvTranspose2d):
             scale = scale.view(1, scale.shape[0], 1, 1)
             layer.weight *= scale
         elif isinstance(layer, torch.nn.Linear):
@@ -234,7 +234,9 @@ class SmoothQuant:
                 weight_scales_info[layer_name] = scale
         return weight_scales_info, absorb_scales_info
 
-    def transform(self, alpha=0.5, percentile=99.999, op_types=['Linear', 'Conv'], scales_per_op=True, calib_num=100):
+    def transform(self, alpha=0.5, percentile=99.999, op_types=['Linear', 'Conv2d', 'ConvTranspose2d'],
+                  scales_per_op=False, calib_num=100):
+
         with torch.no_grad():
             absorb_to_layer, no_absorb_layers = self.trace(
                 op_types)  ##TODO we need to insert mul layer for no_absorb_layers later
@@ -270,21 +272,33 @@ class SmoothQuant:
 
 class TorchGraphAnalysis:
     def __init__(self):
-        self.aten_to_op = {
-            "aten::linear": "Linear",
-            "aten::layer_norm": "layer_norm",
-            "aten::to": "to",
-            "aten::_convolution": "Conv",
-            "aten::group_norm": "group_norm",
-            "aten::instance_norm": "instance_norm"
+        # self.aten_to_op = {
+        #     "aten::linear": "Linear",
+        #     "aten::layer_norm": "layer_norm",
+        #     "aten::to": "to",
+        #     "aten::_convolution": "Conv",
+        #     "aten::group_norm": "group_norm",
+        #     "aten::batch_norm": "batch_norm",
+        #     "aten::instance_norm": "instance_norm"
+        # }
+
+        self.supported_torch_module_to_aten = {
+            "Linear": "aten::linear",
+            "Conv2d": "aten::_convolution",
+            "ConvTranspose2d": "aten::_convolution",
+            "LayerNorm": "layer_norm",
+            "BatchNorm2d": "",
+            "GroupNorm": "aten::group_norm",
+            "InstanceNorm2d": "instance_norm",
         }
         ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete, matmul/conv->Relu/leakyRelu->Matmul/conv is an option
         self.skip_ops_to_find_abosrb = ["aten::to",
                                         "aten::relu",
                                         "aten::leaky_relu"
                                         ]
-        self.could_absorb_layers = ["layer_norm", "batch_norm", "Linear", "Conv", "group_norm",
-                                    "instance_norm"]  ##TODO,suppport more norm
+        self.could_absorb_layers = ["aten::layer_norm", "aten::batch_norm", "aten::linear", "aten::_convolution",
+                                    "aten::group_norm",
+                                    "aten::instance_norm"]  ##TODO,suppport more norm
 
     def trace(self, model, dummy_input):
         traced_model = None
@@ -307,11 +321,11 @@ class TorchGraphAnalysis:
                     assert False, "can't trace the model"
         return traced_model
 
-    def kind_to_op_type(self, kind):
-        if kind in self.aten_to_op:
-            return self.aten_to_op[kind]
-        else:
-            return kind.split("::")[-1]
+    # def kind_to_op_type(self, kind):
+    #     if kind in self.aten_to_op:
+    #         return self.aten_to_op[kind]
+    #     else:
+    #         return kind.split("::")[-1]
 
     def get_parent(self, node):
         if node.inputs() == None:
@@ -324,14 +338,14 @@ class TorchGraphAnalysis:
         nodes = []
         for node in traced_model.graph.nodes():
             node_type = node.kind()
-            ##print(node_type)
+            print(node_type)
             for op_type in op_types:
-                if self.kind_to_op_type(node_type) == op_type:
+                if node_type == op_type:
                     nodes.append((node, op_type))
                     break
         return nodes
 
-    def get_prev_absorb_layer(self, nodes):  ## TODO may be not correct for other models
+    def get_prev_absorb_layer(self, nodes):
         prev_absorb_layer = []
         for node in nodes:
             parent = self.get_parent(node)
@@ -339,18 +353,29 @@ class TorchGraphAnalysis:
                 if parent.kind() in self.skip_ops_to_find_abosrb:
                     parent = self.get_parent(parent)
                     continue
-                if self.kind_to_op_type(parent.kind()) in self.could_absorb_layers:
+                if parent.kind() in self.could_absorb_layers:
                     prev_absorb_layer.append(parent)
                 else:
                     prev_absorb_layer.append(None)
                 break
         return prev_absorb_layer
 
+    def mapping_torch_module_to_aten(self, op_types):
+        res = []
+        for op in op_types:
+            if op not in self.supported_torch_module_to_aten.keys():
+                logger.warning(f"{op} is not supported in smooth quant, ignoring...")
+                continue
+            res.append(self.supported_torch_module_to_aten[op])
+        res = list(set(res))
+        return res
+
     def get_absorb_to_layer(self, model, example_input, op_types):
         traced_model = self.trace(model, example_input)
         if traced_model == None:
             return None
-        nodes_types = self.get_nodes(traced_model, op_types)
+        aten_op_types = self.mapping_torch_module_to_aten(op_types)
+        nodes_types = self.get_nodes(traced_model, aten_op_types)
         nodes = [node_type[0] for node_type in nodes_types]
         nodes_prev_absorb = self.get_prev_absorb_layer(nodes)
         absorb_to_layer = {}
@@ -366,4 +391,36 @@ class TorchGraphAnalysis:
                 absorb_to_layer[absorb_name].append(layer_name)
             else:
                 absorb_to_layer[absorb_name] = [layer_name]
+        absorb_to_layer = self.remove_unsupported_layers(model, absorb_to_layer)
         return absorb_to_layer, no_absorb_layers
+
+    def remove_unsupported_layers(self, model, absorb_to_layer):
+        res = {}
+
+        for key in absorb_to_layer.keys():
+
+            absorb_layer = self.get_module(model, key)
+            layer_type = absorb_layer.__class__.__name__
+            if layer_type not in self.supported_torch_module_to_aten.keys():
+                continue
+            supported = True
+            for layer_name in absorb_to_layer[key]:
+                layer = self.get_module(model, layer_name)
+                layer_type = layer.__class__.__name__
+                if layer_type not in self.supported_torch_module_to_aten.keys():
+                    supported = False
+                    break
+            if supported:
+                res[key] = absorb_to_layer[key]
+        return res
+
+    def get_module(self, model, key):
+        attrs = key.split('.')
+        module = model
+        for attr in attrs:
+            try:
+                attr = int(attr)
+                module = module[attr]
+            except:
+                module = getattr(module, attr)
+        return module
