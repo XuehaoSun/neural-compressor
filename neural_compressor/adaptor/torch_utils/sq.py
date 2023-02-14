@@ -155,7 +155,8 @@ class SmoothQuant:
 
     def absorb_scales(self, layer_name, scale):
         layer = self.get_module(layer_name)
-        if isinstance(layer, torch.nn.BatchNorm2d):
+        if isinstance(layer, torch.nn.BatchNorm2d) or isinstance(layer, torch.nn.GroupNorm) or isinstance(layer,
+                                                                                                          torch.nn.InstanceNorm2d):
             if layer.affine:
                 layer.weight *= scale
                 layer.bias *= scale
@@ -225,22 +226,15 @@ class SmoothQuant:
             ##adjust parameters
             scale = torch.clip(input_power / weight_power, min=1e-5)
 
-            # absorb_layer = self.get_module(key)
-
-            ##TODO if norm does not have affine, need to add one
-            # absorb_layer.weight /= scale
-            # absorb_layer.bias /= scale
             self.absorb_scales(key, 1.0 / scale)
             absorb_scales_info[key] = 1.0 / scale
             layer_names = absorb_to_layer[key]
             for layer_name in layer_names:
                 self.scale_layer_weight(layer_name, scale)
                 weight_scales_info[layer_name] = scale
-            return weight_scales_info, absorb_scales_info
+        return weight_scales_info, absorb_scales_info
 
     def transform(self, alpha=0.5, percentile=99.999, op_types=['Linear', 'Conv'], scales_per_op=True, calib_num=100):
-        ##return self.model
-        ##TODO we may call this funtction several times in tuning quantization configuration, we need to revert the change
         with torch.no_grad():
             absorb_to_layer, no_absorb_layers = self.trace(
                 op_types)  ##TODO we need to insert mul layer for no_absorb_layers later
@@ -277,20 +271,20 @@ class SmoothQuant:
 class TorchGraphAnalysis:
     def __init__(self):
         self.aten_to_op = {
-            "aten::linear": "Linear",  ##TODO support conv
+            "aten::linear": "Linear",
             "aten::layer_norm": "layer_norm",
             "aten::to": "to",
-            "aten::_convolution": "Conv"
+            "aten::_convolution": "Conv",
+            "aten::group_norm": "group_norm",
+            "aten::instance_norm": "instance_norm"
         }
         ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete, matmul/conv->Relu/leakyRelu->Matmul/conv is an option
         self.skip_ops_to_find_abosrb = ["aten::to",
                                         "aten::relu",
                                         "aten::leaky_relu"
-                                        ##"aten::size",
-                                        ##"prim::NumToTensor"
                                         ]
-        # self.skip_ops_to_find_abosrb = ["aten::to"]
-        self.could_absorb_layers = ["layer_norm", "batch_norm", "Linear", "Conv"]  ##TODO,suppport more norm
+        self.could_absorb_layers = ["layer_norm", "batch_norm", "Linear", "Conv", "group_norm",
+                                    "instance_norm"]  ##TODO,suppport more norm
 
     def trace(self, model, dummy_input):
         traced_model = None
@@ -303,7 +297,7 @@ class TorchGraphAnalysis:
                 pass
         else:
             try:
-                traced_model = torch.jit.trace(model, dummy_input, strict=False)  ##TODO polish the code
+                traced_model = torch.jit.trace(model, dummy_input, strict=False)
                 traced_model = torch.jit.freeze(traced_model.eval(), optimize_numerics=optimize_numerics)
             except:
                 try:
@@ -313,20 +307,11 @@ class TorchGraphAnalysis:
                     assert False, "can't trace the model"
         return traced_model
 
-        ##self.traced_model = traced_model  ##TODO,need to check memory usage
-
     def kind_to_op_type(self, kind):
         if kind in self.aten_to_op:
             return self.aten_to_op[kind]
         else:
             return kind.split("::")[-1]
-
-    # def op_type_to_kind(self, op_type):
-    #     for key in self.aten_to_op.keys():
-    #         if op_type == self.aten_to_op[key]:
-    #             return key
-    #
-    #     return "aten::" + str(op_type)  ##not correct
 
     def get_parent(self, node):
         if node.inputs() == None:
@@ -339,6 +324,7 @@ class TorchGraphAnalysis:
         nodes = []
         for node in traced_model.graph.nodes():
             node_type = node.kind()
+            ##print(node_type)
             for op_type in op_types:
                 if self.kind_to_op_type(node_type) == op_type:
                     nodes.append((node, op_type))
