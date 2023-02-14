@@ -242,7 +242,7 @@ function generate_html_core {
                     printf("<td style=\"%s\" colspan=2>%.2f</td>", status_png, target);
                 }
             } else {
-              if(new_result == nan && previous_result == nan){
+              if((new_result == nan && previous_result == nan) || new_result == "unknown"){
                     printf("<td class=\"col-cell col-cell3\" colspan=2></td>");
               } else{
                   if(new_result == nan) {
