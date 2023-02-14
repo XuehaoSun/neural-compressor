@@ -70,6 +70,7 @@ parameters:
 stages:
   - stage: TensorFlowModels
     displayName: Run TensorFlow Model
+    pool: MODEL_PERF_TEST_TF
     dependsOn: []
     condition: and(succeeded(), eq('${{ parameters.TensorFlow_Model }}', 'true'))
     jobs:
