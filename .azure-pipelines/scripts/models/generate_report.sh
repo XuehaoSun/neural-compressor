@@ -171,7 +171,7 @@ function generate_html_core {
                     printf("<td>%s</td> <td><a href=%s>%.2f%</a></td>\n",batch,link,value*100);
                 }
             } else {
-                if(link == "" || value == "N/A") {
+                if(link == "" || value == "N/A" || value == "unknown") {
                     printf("<td></td> <td></td>\n");
                 } else {
                     printf("<td>%s</td> <td><a href=%s>Failure</a></td>\n",batch,link);

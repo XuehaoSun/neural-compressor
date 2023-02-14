@@ -133,6 +133,10 @@ def collect_log():
                 parse_tuning_line(line, tmp)
         print(tmp)
 
+        # oob_model no need acc
+        if(args.model in ["darknet19", "densenet-121", "resnet-101"]):
+            tmp['fp32_acc'], tmp['int8_acc'] = "unknown", "unknown"
+
         results.append('{};{};{};{};FP32;{};Inference;Accuracy;1;{};{}\n'.format(OS, PLATFORM, args.framework, args.fwk_ver, args.model, tmp['fp32_acc'], "<url>"))
         results.append('{};{};{};{};INT8;{};Inference;Accuracy;1;{};{}\n'.format(OS, PLATFORM, args.framework,  args.fwk_ver, args.model, tmp['int8_acc'], "<url>"))
         tuning_infos.append(';'.join([OS, PLATFORM, args.framework,  args.fwk_ver, args.model, tmp['strategy'], str(tmp['tune_time']), str(tmp['tuning_trials']), "<url>", f"{round(tmp['max_mem_size'] / tmp['total_mem_size'] * 100, 4)}%"])+'\n')
