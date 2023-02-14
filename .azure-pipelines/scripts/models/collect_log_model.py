@@ -16,6 +16,7 @@ print('====== collecting model test log =======')
 OS = 'linux'
 PLATFORM = 'icx'
 URL = 'https://dev.azure.com/lpot-inc/neural-compressor/_build/results?buildId='+args.build_id+'&view=artifacts&pathAsName=false&type=publishedArtifacts'
+OOB_MODEL_LIST = ["darknet19", "densenet-121", "resnet-101"]
 
 
 def get_model_tuning_dict_results():
@@ -134,7 +135,7 @@ def collect_log():
         print(tmp)
 
         # oob_model no need acc
-        if(args.model in ["darknet19", "densenet-121", "resnet-101"]):
+        if ((args.model in OOB_MODEL_LIST) and args.framework == "tensorflow"):
             tmp['fp32_acc'], tmp['int8_acc'] = "unknown", "unknown"
 
         results.append('{};{};{};{};FP32;{};Inference;Accuracy;1;{};{}\n'.format(OS, PLATFORM, args.framework, args.fwk_ver, args.model, tmp['fp32_acc'], "<url>"))
