@@ -142,18 +142,19 @@ class SmoothQuant:
             weight = weight.reshape(-1, weight.shape[-1])
         return weight
 
-    def scale_layer_weight(self, layer_name, scale: torch.Tensor):
+    def scale_layer_weight(self, layer_name, scale: torch.Tensor):##input channel
         layer = self.get_module(layer_name)
         if isinstance(layer, torch.nn.Conv2d) or isinstance(layer, torch.nn.ConvTranspose2d):
             scale = scale.view(1, scale.shape[0], 1, 1)
             layer.weight *= scale
         elif isinstance(layer, torch.nn.Linear):
+            scale = scale.view(1, scale.shape[0])
             layer.weight *= scale
         else:
             logger.warning(f"found unsupported layer {type(layer)}, try to multiply scale directly ")
             layer.weight *= scale
 
-    def absorb_scales(self, layer_name, scale):
+    def absorb_scales(self, layer_name, scale):##output channel
         layer = self.get_module(layer_name)
         if isinstance(layer, torch.nn.BatchNorm2d) or isinstance(layer, torch.nn.GroupNorm) or isinstance(layer,
                                                                                                           torch.nn.InstanceNorm2d):
@@ -190,7 +191,7 @@ class SmoothQuant:
         elif isinstance(layer, torch.nn.Linear):
             if hasattr(layer, "bias") and (layer.bias != None):
                 layer.bias *= scale
-            scale = scale.view(-1, scale.shape[0])
+            scale = scale.view(scale.shape[0],1)
             layer.weight *= scale
 
         else:
@@ -291,11 +292,12 @@ class TorchGraphAnalysis:
             "GroupNorm": "aten::group_norm",
             "InstanceNorm2d": "instance_norm",
         }
-        ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete, matmul/conv->Relu/leakyRelu->Matmul/conv is an option
-        self.skip_ops_to_find_abosrb = ["aten::to",
+        ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete
+        self.skip_ops_to_find_absorb = ["aten::to",
                                         "aten::relu",
                                         "aten::leaky_relu"
                                         ]
+
         self.could_absorb_layers = ["aten::layer_norm", "aten::batch_norm", "aten::linear", "aten::_convolution",
                                     "aten::group_norm",
                                     "aten::instance_norm"]  ##TODO,suppport more norm
@@ -338,7 +340,7 @@ class TorchGraphAnalysis:
         nodes = []
         for node in traced_model.graph.nodes():
             node_type = node.kind()
-            print(node_type)
+            ##print(node_type)
             for op_type in op_types:
                 if node_type == op_type:
                     nodes.append((node, op_type))
@@ -350,7 +352,7 @@ class TorchGraphAnalysis:
         for node in nodes:
             parent = self.get_parent(node)
             while 1:
-                if parent.kind() in self.skip_ops_to_find_abosrb:
+                if parent.kind() in self.skip_ops_to_find_absorb:
                     parent = self.get_parent(parent)
                     continue
                 if parent.kind() in self.could_absorb_layers:
