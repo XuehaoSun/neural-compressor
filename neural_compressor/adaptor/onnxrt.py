@@ -61,6 +61,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
         self.static = framework_specific_info["approach"] == "post_training_static_quant"
         self.dynamic = framework_specific_info["approach"] == "post_training_dynamic_quant"
         self.backend = PROVIDERS[framework_specific_info["backend"]]
+        self.performance_only = deep_get(framework_specific_info, 'performance_only', False)
 
         if self.backend not in ort.get_all_providers():
             logger.warning("{} backend is not supported in current environment, "
@@ -159,7 +160,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
             format = QuantizationMode.IntegerOps
 
         self.quantizable_ops = self._query_quantizable_ops(model.model)
-        tmp_model = copy.deepcopy(model)
+        tmp_model = copy.deepcopy(model) if not self.performance_only else model
 
         quantize_config = self._cfg_to_quantize_config(tune_cfg)
         iterations = tune_cfg.get('calib_iteration', 1)
