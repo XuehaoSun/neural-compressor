@@ -23,7 +23,19 @@ def model_forward(model, dataloader, sample_cnt):
 
 
 class SmoothQuant:
+    """
+    Fake input channel quantization, for more details please refer to
+    [1] SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models
+    [2] SPIQ: Data-Free Per-Channel Static Input Quantization
+    Currently, we only handle the layers whose smooth scale could be absorbed, we will support other layers later
+    """
+
     def __init__(self, model: torch.nn.Module, dataloader, traced_model=None):
+        """
+        :param model: Torch model :param dataloader: Calibration dataloader :param traced_model: A specific model
+        shares the same architecture as the model and could be traced by torch.jit. If not supplied, we use model
+        instead.
+        """
         self.model = model
         device, dtype = self.get_device()
         self.model = self.model.to(device)
@@ -39,10 +51,19 @@ class SmoothQuant:
         self.absorb_scales_info = {}
 
     def get_device(self):
+        """
+        Get the model device
+        :return:Model device
+        """
         for _, p in self.model.named_parameters():
             return p.data.device, p.data.dtype
 
     def get_module(self, key):
+        """
+        Get the module by the name which is parsed by jit
+        :param key: the module name with the jit format
+        :return:
+        """
         attrs = key.split('.')
         module = self.model
         for attr in attrs:
@@ -54,12 +75,17 @@ class SmoothQuant:
         return module
 
     def save_input_pc_hook(self, name):
-        def save_input_hook(model, inputs, outputs):
+        """
+        A forward hook to save input max of a module
+        :param name: the module name
+        :return: A hook function
+        """
+        def save_input_hook(module, inputs, outputs):
             if name not in self.input_maxes.keys():
                 self.input_maxes[name] = []
             input = inputs[0]
             ##TODO check input channel is correct
-            if len(model.weight.shape) == 4:  ##conv3d or conv1d not suppoted now, need better way
+            if len(module.weight.shape) == 4:  ##conv3d or conv1d not suppoted now, need better way
                 input = input.permute(0, 2, 3, 1)
             input = input.reshape(-1, input.shape[-1])
             max_tensor = torch.max(input, dim=0)[0]
@@ -68,6 +94,11 @@ class SmoothQuant:
         return save_input_hook
 
     def add_observer(self, modules):
+        """
+
+        :param modules:
+        :return:
+        """
         self.hook_handles = []
         for key in modules.keys():
             hook_func = self.save_input_pc_hook(key)
@@ -238,6 +269,22 @@ class SmoothQuant:
 
     def transform(self, alpha=0.5, percentile=99.999, op_types=['Linear', 'Conv2d', 'ConvTranspose2d'],
                   scales_per_op=False, calib_num=100):
+        """
+
+          Currently we only handle layers whose could be abos
+          inert Mul op before each conv/matmul with adjusted weights
+
+          Args:
+              alpha: smooth alpha in SmoothQuant, 1.0 will fallback to SPIQ
+              percentile:Percentile of calibration to remove outliers
+              op_types: The op types whose input tensor will be dumped
+              scales_per_op: True, each op will have an individual scale, mainly for accuracy
+                             False, ops with the same input will share a scale, mainly for performance
+
+          Returns:
+              model: A modified onnx model
+
+          """
 
         with torch.no_grad():
             absorb_to_layer, no_absorb_layers = self.trace(
@@ -260,7 +307,7 @@ class SmoothQuant:
                 self.absorb_scales(key, 1.0 / self.absorb_scales_info[key])
 
     def trace(self, op_types):
-        tg = TorchGraphAnalysis()
+        tg = GraphTrace()
         for idx, input in enumerate(self.dataloader):
             example_inputs = input
             break
@@ -272,7 +319,7 @@ class SmoothQuant:
         return absorb_to_layer, no_absorb_layers
 
 
-class TorchGraphAnalysis:
+class GraphTrace:
     def __init__(self):
         # self.aten_to_op = {
         #     "aten::linear": "Linear",
@@ -295,8 +342,8 @@ class TorchGraphAnalysis:
         }
         ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete
         self.skip_ops_to_find_absorb = ["aten::to",
-                                        # "aten::relu",
-                                        # "aten::leaky_relu"
+                                        "aten::relu",
+                                        "aten::leaky_relu"
                                         ]
 
         self.could_absorb_layers = ["aten::layer_norm", "aten::batch_norm", "aten::linear", "aten::_convolution",
