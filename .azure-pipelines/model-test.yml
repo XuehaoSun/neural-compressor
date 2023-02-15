@@ -128,7 +128,7 @@ stages:
     displayName: Generate Report
     pool:
       vmImage: "ubuntu-latest"
-    dependsOn: [TensorFlowModels, PyTorchModels, MXNetModels, ONNXModels]
+    dependsOn: [TensorFlowModels]
     jobs:
       - job: GenerateReport
         steps:
