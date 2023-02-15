@@ -21,7 +21,6 @@
 # license information.
 # --------------------------------------------------------------------------
 """Calibration for onnx models."""
-from memory_profiler import profile 
 import copy
 import logging
 import sys
@@ -105,8 +104,7 @@ class ONNXRTAugment:
             if self.opset_version < 13 and self.ort_version >= ORT112_VERSION:
                 logger.warning("Please use onnxruntime < 1.12.0 or upgrade model opset " \
                     "version to 13 or higher to inspect per-channel quantized weight") 
- 
-        model = copy.deepcopy(self.model)
+        model = self.model
         model_nodes_names = [node.name for node in model.graph.node]
 
         added_nodes = []
@@ -195,16 +193,25 @@ class ONNXRTAugment:
         if self.augment_nodes:
             model.graph.node.extend(added_nodes) # pylint: disable=no-member
         model.graph.output.extend(added_outputs) # pylint: disable=no-member
-
-        self.augmented_model = model
-        if self.model_wrapper.large_size: # pragma: no cover
+        
+        # save to augmented model
+        if not self.model_wrapper.large_size: 
+            onnx.save_model(model, self.model_wrapper.model_path + '_augment.onnx')
+            self.augmented_model = onnx.load(self.model_wrapper.model_path + '_augment.onnx')
+        else: # pragma: no cover
             onnx.save_model(model,
                             self.model_wrapper.model_path + '_augment.onnx',
                             save_as_external_data=True,
                             all_tensors_to_one_file=True,
                             location="weights.pb",
                             convert_attribute=False)
-        del model
+            self.augmented_model = onnx.load(self.model_wrapper.model_path + '_augment.onnx',
+                                             load_external_data=True)
+        # restore model
+        for added_output in added_outputs:
+            model.graph.output.remove(added_output)
+        for added_node in added_nodes:
+            model.graph.node.remove(added_node)
 
     def get_intermediate_outputs(self, calib_mode=None):
         """Gather intermediate model outputs after running inference."""
@@ -393,8 +400,7 @@ class ONNXRTAugment:
                                         a minimum of all values and the second element 
                                         is a maximum of all values. Defaults to 'naive'.
         """
-        min_max = self.dump_minmax(calib_mode)
-        return min_max, self.calculate_quantization_params(q_config, min_max)
+        return self.calculate_quantization_params(q_config, self.dump_minmax(calib_mode))
 
     def calculate_quantization_params(self, q_config, quantization_thresholds):
         """Given quantization thresholds, calculate the quantization params.

@@ -159,7 +159,7 @@ class ONNXRUNTIMEAdaptor(Adaptor):
             format = QuantizationMode.IntegerOps
 
         self.quantizable_ops = self._query_quantizable_ops(model.model)
-        tmp_model = model
+        tmp_model = copy.deepcopy(model)
 
         quantize_config = self._cfg_to_quantize_config(tune_cfg)
         iterations = tune_cfg.get('calib_iteration', 1)
@@ -379,8 +379,8 @@ class ONNXRUNTIMEAdaptor(Adaptor):
                   black_nodes=black_nodes, white_nodes=white_nodes, \
                   iterations=list(range(0, quantize_config['calib_iteration'])),
                   backend=self.backend, reduce_range=self.reduce_range)
-        # self.min_max = augment.dump_minmax()
-        self.min_max, quantize_params = augment.dump_calibration(quantize_config)
+        self.min_max = augment.dump_minmax()
+        quantize_params = augment.dump_calibration(quantize_config)
         return quantize_params
 
     def inspect_tensor(self, model, dataloader, op_list=[],
