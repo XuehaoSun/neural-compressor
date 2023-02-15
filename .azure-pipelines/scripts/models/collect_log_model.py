@@ -114,7 +114,7 @@ def get_refer_data():
         for value in values:
             precision = value[keys.index("Precision")]
             Type = value[keys.index("Type")]
-            result[f"{precision}_{Type}"] = float(value[keys.index("Value")])
+            result[f"{precision}_{Type}"] = float(value[keys.index("Value")]) if value[keys.index("Value")]!="unknown" else "unknown"
         return result
     else:
         print(f"refer log file: {refer_log} not found")
