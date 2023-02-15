@@ -98,6 +98,7 @@ class TuneStrategy(object):
         """
         self.model = model
         self.cfg = conf.usr_cfg
+        self._disable_recipes_and_op_wise_setting()
         self.history_path = self._create_path(self.cfg.tuning.workspace.path, './history.snapshot')
         self.deploy_path = self._create_path(self.cfg.tuning.workspace.path, 'deploy.yaml')
         self.eval_dataloader = eval_dataloader
@@ -171,6 +172,20 @@ class TuneStrategy(object):
         if resume is not None: self.setup_resume(resume)
 
 
+    def _disable_recipes_and_op_wise_setting(self):
+        logger.info("*** Force disable recipes and op-wise setting")
+        self.cfg.quantization.recipes.scale_propagation_max_pooling = True
+        self.cfg.quantization.recipes.scale_propagation_concat = True
+        self.cfg.quantization.recipes.first_conv_or_matmul_quantization = True
+        self.cfg.quantization.recipes.last_conv_or_matmul_quantization = True
+        self.cfg.quantization.recipes.pre_post_process_quantization = True
+        
+        self.cfg.quantization.model_wise = {'weight': {'bit': [7.0]}, 'activation': {}}
+        self.cfg.quantization.optype_wise = None
+        self.cfg.quantization.op_wise = None
+        logger.info("*** The cfg after disable recipes and op-wise setting.")
+        logger.info(self.cfg)
+        
     @abstractmethod
     def next_tune_cfg(self):
         """Interface for generate the next tuning config.
