@@ -142,7 +142,7 @@ class SmoothQuant:
             weight = weight.reshape(-1, weight.shape[-1])
         return weight
 
-    def scale_layer_weight(self, layer_name, scale: torch.Tensor):##input channel
+    def scale_layer_weight(self, layer_name, scale: torch.Tensor):  ##input channel
         layer = self.get_module(layer_name)
         if isinstance(layer, torch.nn.Conv2d) or isinstance(layer, torch.nn.ConvTranspose2d):
             scale = scale.view(1, scale.shape[0], 1, 1)
@@ -154,7 +154,7 @@ class SmoothQuant:
             logger.warning(f"found unsupported layer {type(layer)}, try to multiply scale directly ")
             layer.weight *= scale
 
-    def absorb_scales(self, layer_name, scale):##output channel
+    def absorb_scales(self, layer_name, scale):  ##output channel
         layer = self.get_module(layer_name)
         if isinstance(layer, torch.nn.BatchNorm2d) or isinstance(layer, torch.nn.GroupNorm) or isinstance(layer,
                                                                                                           torch.nn.InstanceNorm2d):
@@ -191,7 +191,7 @@ class SmoothQuant:
         elif isinstance(layer, torch.nn.Linear):
             if hasattr(layer, "bias") and (layer.bias != None):
                 layer.bias *= scale
-            scale = scale.view(scale.shape[0],1)
+            scale = scale.view(scale.shape[0], 1)
             layer.weight *= scale
 
         else:
@@ -223,9 +223,10 @@ class SmoothQuant:
             input_power = torch.pow(input_max, alpha)
             logger.info(f"{max(input_max)}, {min(input_power)}")  ##TODO changed it to debug later
             weight_power = torch.pow(weight_max_per_channel, 1 - alpha)
-
+            ##logger.info(f"{absorb_to_layer[key][0]} layer sparsity is {1.0-torch.count_nonzero(input_power)/input_power.numel()}")
             ##adjust parameters
             scale = torch.clip(input_power / weight_power, min=1e-5)
+            scale[input_power == 0] = 1.0
 
             self.absorb_scales(key, 1.0 / scale)
             absorb_scales_info[key] = 1.0 / scale
@@ -287,15 +288,15 @@ class TorchGraphAnalysis:
             "Linear": "aten::linear",
             "Conv2d": "aten::_convolution",
             "ConvTranspose2d": "aten::_convolution",
-            "LayerNorm": "layer_norm",
-            "BatchNorm2d": "",
+            "LayerNorm": "aten::layer_norm",
+            "BatchNorm2d": "aten::batch_norm",
             "GroupNorm": "aten::group_norm",
             "InstanceNorm2d": "instance_norm",
         }
         ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete
         self.skip_ops_to_find_absorb = ["aten::to",
-                                        "aten::relu",
-                                        "aten::leaky_relu"
+                                        # "aten::relu",
+                                        # "aten::leaky_relu"
                                         ]
 
         self.could_absorb_layers = ["aten::layer_norm", "aten::batch_norm", "aten::linear", "aten::_convolution",
