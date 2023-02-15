@@ -113,10 +113,10 @@ import transformers
 from tqdm import tqdm
 from datasets import load_dataset
 import sys
-
+from transformers import set_seed
 sys.path.append('./')
 
-
+set_seed(42)
 class Evaluator:
     def __init__(self, dataset, tokenizer, device):
         self.dataset = dataset
@@ -136,6 +136,7 @@ class Evaluator:
         model.eval()
         # The task is to predict the last word of the input.
         total, hit = 0, 0
+        index = 1
         for batch in tqdm(self.dataset):
             # if index == 100:
             #     break
@@ -147,6 +148,9 @@ class Evaluator:
             pred = last_token_logits.argmax(dim=-1)
             total += label.size(0)
             hit += (pred == label).sum().item()
+            index += 1
+            if index % 300 == 0:
+                print(hit / total)
         acc = hit / total
         return acc
 
@@ -172,8 +176,8 @@ class CalibDataloader():
             yield input_ids
 
 
+model_name = "facebook/opt-1.3b"
 model_name = "facebook/opt-125m"
-
 tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 dataset = load_dataset('lambada', split='validation')
 dataset = dataset.shuffle(seed=42)
@@ -209,6 +213,7 @@ from neural_compressor import PostTrainingQuantConfig
 from neural_compressor import quantization
 
 conf = PostTrainingQuantConfig(backend='ipex')
+
 q_model = quantization.fit(model,
                            conf,
                            calib_dataloader=calib_dataloader,

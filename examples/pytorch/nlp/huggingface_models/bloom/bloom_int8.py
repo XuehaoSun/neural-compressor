@@ -3,9 +3,10 @@ import transformers
 from tqdm import tqdm
 from datasets import load_dataset
 import sys
-
+from transformers import set_seed
 sys.path.append('./')
 
+set_seed(42)
 
 class Evaluator:
     def __init__(self, dataset, tokenizer, device):
@@ -26,6 +27,7 @@ class Evaluator:
         model.eval()
         # The task is to predict the last word of the input.
         total, hit = 0, 0
+        index = 0
         for batch in tqdm(self.dataset):
             # if index == 100:
             #     break
@@ -37,6 +39,9 @@ class Evaluator:
             pred = last_token_logits.argmax(dim=-1)
             total += label.size(0)
             hit += (pred == label).sum().item()
+            index += 1
+            if index % 300 == 0:
+                print(hit / total)
         acc = hit / total
         return acc
 
