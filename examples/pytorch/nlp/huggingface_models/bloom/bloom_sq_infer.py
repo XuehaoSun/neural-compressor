@@ -258,7 +258,8 @@ class Evaluator:
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.device = device
-        self.dataloader = INCDataloader(dataset, tokenizer, batch_size, device)
+        # the max_length of validation dataset is 195
+        self.dataloader = INCDataloader(dataset, tokenizer, batch_size, device, max_length=195)
 
     @torch.no_grad()
     def evaluate(self, model):
@@ -284,7 +285,7 @@ class Evaluator:
 
 
 class INCDataloader():
-    def __init__(self, dataset, tokenizer, batch_size=1, device='cpu'):
+    def __init__(self, dataset, tokenizer, batch_size=1, device='cpu', max_length=512):
         self.dataset = dataset
         self.tokenizer = tokenizer
         self.device = device
@@ -294,7 +295,7 @@ class INCDataloader():
 
         # tokenize the dataset
         def tokenize_function(examples):
-            example = self.tokenizer(examples['text'], padding='max_length', max_length=195)
+            example = self.tokenizer(examples['text'], padding='max_length', max_length=max_length)
             return example
 
         self.dataset = self.dataset.map(tokenize_function, batched=True)
@@ -304,6 +305,8 @@ class INCDataloader():
         batched_input = None
         for idx, batch in enumerate(self.dataset):
             input_ids = batch['input_ids'].to(self.device).unsqueeze(0)
+            if input_ids.shape[1] > 512:
+                input_ids = input_ids[:, :512]
             if batched_input is None:
                 batched_input = input_ids
             else:
@@ -324,20 +327,18 @@ tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 
 dataset = load_dataset('lambada', split='validation')
 dataset = dataset.shuffle(seed=42)
+train_dataset = load_dataset('lambada', split='train')
+train_dataset = train_dataset.shuffle(seed=42)
 
+calib_dataset = train_dataset.select(range(100))
+calib_dataloader = INCDataloader(calib_dataset, tokenizer, 16, 'cpu')
 
-dataset = dataset.select(range(12))
-calib_dataset = dataset.select(range(10))
-
-
-evaluator = Evaluator(dataset, tokenizer, 8, 'cpu')
+evaluator = Evaluator(dataset, tokenizer, 16, 'cpu')
 
 model = transformers.AutoModelForCausalLM.from_pretrained(
    model_name,
    torchscript=True,  # torchscript will force `return_dict=False` to avoid jit errors
 )
-
-calib_dataloader = INCDataloader(calib_dataset, tokenizer, 8, 'cpu')
 
 # Enable smoothquant to transfer weights before quantization
 sq = SmoothQuant(model, calib_dataloader)
