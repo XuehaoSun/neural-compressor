@@ -94,7 +94,7 @@ class SmoothQuant:
         self.add_observer(hook_modules)
         self.dump_min_max()
         self.remove_observer()
-        return hook_modules, layer_to_norm_mapping, norm_to_layer_mapping
+        return norm_to_layer_mapping
 
     def dump_min_max(self, calibration_method="min_max"):
         cnt = 1
@@ -113,7 +113,7 @@ class SmoothQuant:
             val = torch.max(torch.abs(val), dim=0)[0]  ##FIXME should add abs
             self.input_maxs[key] = val
 
-    def adjust_parameters(self, hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, input_maxs, alpha=0.5):
+    def adjust_parameters(self, norm_to_layer_mapping, input_maxs, alpha=0.5):
         norm_to_input_maxs = {}
         for key in norm_to_layer_mapping.keys():
             layer_name = norm_to_layer_mapping[key][0]
@@ -152,10 +152,23 @@ class SmoothQuant:
             for layer in weights_layers:
                 layer.weight *= scale
 
+    def load(self):
+        with torch.no_grad():
+            state_dict = torch.load('sq_state_dict.bin')
+            norm_to_layer_mapping = state_dict['norm_to_layer_mapping']
+            self.input_maxs = state_dict['input_maxs']
+            self.adjust_parameters(norm_to_layer_mapping, self.input_maxs)
+            return self.model
+
     def transform(self):
         with torch.no_grad():
-            hook_modules, layer_to_norm_mapping, norm_to_layer_mapping = self.calibration()
-            self.adjust_parameters(hook_modules, layer_to_norm_mapping, norm_to_layer_mapping, self.input_maxs)
+            norm_to_layer_mapping = self.calibration()
+            state_dict = {
+                'norm_to_layer_mapping': norm_to_layer_mapping,
+                'input_maxs': self.input_maxs,
+            }
+            torch.save(state_dict, 'sq_state_dict.bin')
+            self.adjust_parameters(norm_to_layer_mapping, self.input_maxs)
             return self.model
 
     def get_layer_mapping(self):
@@ -341,8 +354,11 @@ model = transformers.AutoModelForCausalLM.from_pretrained(
 )
 
 # Enable smoothquant to transfer weights before quantization
+model.eval()
 sq = SmoothQuant(model, calib_dataloader)
 model = sq.transform()
+# if transform is executed before, you can use load to avoid duplicated calibration.
+# model = sq.load()
 
 def eval_func(model):
     acc = evaluator.evaluate(model)
