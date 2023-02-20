@@ -201,7 +201,7 @@ class TuneStrategy(object):
             self.eval_func = self._fake_eval_func
 
         # get fp32 model baseline
-        self.baseline = [0.6000, [0, 0]]
+        ##self.baseline = [0.6000, [0, 0]]
         if self.baseline is None:
             logger.info("Get FP32 model baseline.")
             self._fp32_model = self.model
