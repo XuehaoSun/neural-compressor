@@ -126,9 +126,6 @@ my_dataset = dataset.map(tokenize_function, batched=True)
 my_dataset.set_format(type='torch', columns=['input_ids'])
 
 
-sq = SmoothQuant(model, my_dataset)
-model = sq.transform()
-
 def eval_func(model):
     acc = evaluator.evaluate(model)
     return acc
