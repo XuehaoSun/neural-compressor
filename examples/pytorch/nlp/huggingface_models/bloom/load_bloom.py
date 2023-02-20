@@ -15,13 +15,23 @@ class Evaluator:
         self.tokenizer = tokenizer
         self.device = device
         self.dataloader = INCDataloader(dataset, tokenizer, batch_size, device)
+        self.batch_size = batch_size
 
     @torch.no_grad()
     def evaluate(self, model):
         model.eval()
         # The task is to predict the last word of the input.
         total, hit = 0, 0
+        last_index = 136
+        last_index = -1
+        acc_tmp = None
+        num_samples_tmp = (last_index+1)*self.batch_size
+        num_samples = 0
         for index, batch in enumerate(tqdm(self.dataloader)):
+            if index <= last_index:
+                continue
+            if index == last_index + 1:
+                acc_tmp = 0.4607664233576642
             input_ids = batch
             label = input_ids[:, -1]
             start = time.time()
@@ -36,12 +46,20 @@ class Evaluator:
             pred = last_token_logits.argmax(dim=-1)
             total += label.size(0)
             hit += (pred == label).sum().item()
+            num_samples += len(label)
             if (index+1) % 10 == 0:
+                if acc_tmp:
+                    accu = ((hit / total)*num_samples + acc_tmp*num_samples_tmp)/(num_samples+num_samples_tmp)
+                else:
+                    accu = hit / total
                 print('#############')
-                print('Temporary Accu:', hit / total, flush=True)
+                print('Temporary Accu:', accu, flush=True)
                 print('#############')
-        acc = hit / total
-        return acc
+        if acc_tmp:
+            accu = ((hit / total)*num_samples + acc_tmp*num_samples_tmp)/(num_samples+num_samples_tmp)
+        else:
+            accu = hit / total
+        return accu
 
 
 class INCDataloader():
@@ -85,7 +103,7 @@ tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 dataset = load_dataset('lambada', split='validation')
 dataset = dataset.shuffle(seed=42)
 
-evaluator = Evaluator(dataset, tokenizer, 8, 'cpu')
+evaluator = Evaluator(dataset, tokenizer, 16, 'cpu')
 
 load_int8 = False
 if load_int8:
@@ -96,6 +114,11 @@ else:
        model_name,
        torchscript=True,  # torchscript will force `return_dict=False` to avoid jit errors
     )
+    tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
+    dataset = load_dataset('lambada', split='validation')
+    input = tokenizer( dataset[0]['text'], padding='max_length', max_length=195, return_tensors='pt')
+    example_input = input['input_ids'][0].to('cpu').unsqueeze(0)
+    model = torch.jit.trace(model, example_input)
 
 acc = evaluator.evaluate(model)
 print('######################')
