@@ -1,14 +1,33 @@
-import torch
+#
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2023 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+from neural_compressor.utils.utility import LazyImport
+
+torch = LazyImport('torch')
 from ...utils import logger
 
 
-def model_forward(model, dataloader, sample_cnt):
+def model_forward(model, dataloader, iters):
     try:
         cnt = 0
         for idx, (input, label) in enumerate(dataloader):
             output = model(input)
-            cnt += len(input)
-            if cnt >= sample_cnt:
+            cnt += 1
+            if cnt >= iters:
                 break
     except Exception as e:
         cnt = 0
@@ -17,27 +36,30 @@ def model_forward(model, dataloader, sample_cnt):
                 out = model(**input)
             else:
                 out = model(input)
-            cnt += len(input)
-            if cnt >= sample_cnt:
+            cnt += 1
+            if cnt >= iters:
                 break
 
 
 class SmoothQuant:
     """
     Fake input channel quantization, for more details please refer to
-    [1] SmoothQuant: Accurate and Efficient Post-Training Quantization for Large Language Models
+    [1] SmoothQuant: Accurate and Efficient
+    Post-Training Quantization for Large Language Models
     [2] SPIQ: Data-Free Per-Channel Static Input Quantization
-    Currently, we only handle the layers whose smooth scale could be absorbed, we will support other layers later
+    Currently, we only handle the layers whose smooth scale could be absorbed, we will support other layers later.
+    We only support inplace mode which means the model weights will be changed, you can call recover function only
+    once to recover the weights if needed
     """
 
-    def __init__(self, model: torch.nn.Module, dataloader, traced_model=None):
+    def __init__(self, model, dataloader, traced_model=None):
         """
         :param model: Torch model :param dataloader: Calibration dataloader :param traced_model: A specific model
         shares the same architecture as the model and could be traced by torch.jit. If not supplied, we use model
         instead.
         """
         self.model = model
-        device, dtype = self.get_device()
+        device, dtype = self._get_device()
         self.model = self.model.to(device)
         self.model.eval()
         self.device = device
@@ -50,7 +72,7 @@ class SmoothQuant:
         self.weight_scale_info = {}
         self.absorb_scales_info = {}
 
-    def get_device(self):
+    def _get_device(self):
         """
         Get the model device
         :return:Model device
@@ -58,11 +80,11 @@ class SmoothQuant:
         for _, p in self.model.named_parameters():
             return p.data.device, p.data.dtype
 
-    def get_module(self, key):
+    def _get_module(self, key):
         """
-        Get the module by the name which is parsed by jit
+        Get the module by the name parsed by jit
         :param key: the module name with the jit format
-        :return:
+        :return: the module in original model
         """
         attrs = key.split('.')
         module = self.model
@@ -74,12 +96,13 @@ class SmoothQuant:
                 module = getattr(module, attr)
         return module
 
-    def save_input_pc_hook(self, name):
+    def _save_input_pc_hook(self, name):
         """
         A forward hook to save input max of a module
         :param name: the module name
         :return: A hook function
         """
+
         def save_input_hook(module, inputs, outputs):
             if name not in self.input_maxes.keys():
                 self.input_maxes[name] = []
@@ -93,19 +116,22 @@ class SmoothQuant:
 
         return save_input_hook
 
-    def add_observer(self, modules):
+    def _add_observer(self, modules):
         """
-
-        :param modules:
+        :param modules: the modules which the observer will insert to
         :return:
         """
         self.hook_handles = []
         for key in modules.keys():
-            hook_func = self.save_input_pc_hook(key)
+            hook_func = self._save_input_pc_hook(key)
             hook_handle = modules[key].register_forward_hook(hook_func)
             self.hook_handles.append(hook_handle)
 
-    def remove_observer(self):
+    def _remove_observer(self):
+        """
+        remove the observer from the model
+        :return:
+        """
         for hook_handle in self.hook_handles:
             hook_handle.remove()
 
@@ -130,7 +156,12 @@ class SmoothQuant:
     #     result = t.view(-1).kthvalue(k).values.item()
     #     return result
 
-    def calibration(self, absorb_to_layer, calib_num):
+    def _calibrate(self, absorb_to_layer, calib_iter):
+        """
+        :param absorb_to_layer: A dict,key is the absorb layer, val is a list of the to be smoothed layer
+        :param calib_iter: Data size for calibration
+        :return: A dict that saved the layer name and the channe-wised max value info
+        """
         layer_to_absorb = {}
         for key in absorb_to_layer:
             for layer_name in absorb_to_layer[key]:
@@ -139,11 +170,12 @@ class SmoothQuant:
         hook_modules = {}
 
         for index, name in enumerate(hook_module_names_tmp):
-            module = self.get_module(name)
+            module = self._get_module(name)
             if isinstance(module, torch.nn.Linear) or isinstance(module,
                                                                  torch.nn.Conv2d):
                 if isinstance(module, torch.nn.Conv2d):
-                    if module.groups > 1 and module.in_channels == module.out_channels and module.groups == module.in_channels:
+                    if module.groups > 1 and module.in_channels == module.out_channels and \
+                            module.groups == module.in_channels:
                         continue
                     else:
                         pass
@@ -152,13 +184,19 @@ class SmoothQuant:
         if len(hook_modules) == 0:
             return {}
 
-        self.add_observer(hook_modules)
-        self.dump_min_max(calib_num=calib_num)
-        self.remove_observer()
+        self._add_observer(hook_modules)
+        self._dump_min_max(calib_iter=calib_iter)
+        self._remove_observer()
         return self.input_maxes
 
-    def dump_min_max(self, calibration_method="min_max", calib_num=100):
-        model_forward(self.model, self.dataloader, calib_num)
+    def _dump_min_max(self, calibration_method="min_max", calib_iter=100):
+        """
+        Dump min max per channel information, the min max value will be saved in input_maxes attribute
+        :param calibration_method: only support min_max currently
+        :param calib_iter: Sample size for calibration
+        :return:
+        """
+        model_forward(self.model, self.dataloader, calib_iter)
         ##stack
         for key in self.input_maxes.keys():
             val = self.input_maxes[key]
@@ -166,15 +204,26 @@ class SmoothQuant:
             val = torch.max(torch.abs(val), dim=0)[0]  ##FIXME should add abs
             self.input_maxes[key] = val
 
-    def reshape_in_channel_to_last(self, layer_name):
-        weight = self.get_module(layer_name).weight  ##TODO oc*ic, support transposed conv
+    def _reshape_in_channel_to_last(self, layer_name):
+        """
+        Move the input channel to the last dim
+        :param layer_name: Layer name
+        :return: The reshaped weight
+        """
+        weight = self._get_module(layer_name).weight  ##TODO oc*ic, support transposed conv
         if len(weight.shape) == 4:
             weight = weight.permute(0, 2, 3, 1)
             weight = weight.reshape(-1, weight.shape[-1])
         return weight
 
-    def scale_layer_weight(self, layer_name, scale: torch.Tensor):  ##input channel
-        layer = self.get_module(layer_name)
+    def _scale_layer_weight(self, layer_name, scale):  ##input channel
+        """
+        Scale the layer weights at input channel
+        :param layer_name: The layer name
+        :param scale: The scale to be multiplied
+        :return:
+        """
+        layer = self._get_module(layer_name)
         if isinstance(layer, torch.nn.Conv2d) or isinstance(layer, torch.nn.ConvTranspose2d):
             scale = scale.view(1, scale.shape[0], 1, 1)
             layer.weight *= scale
@@ -185,10 +234,16 @@ class SmoothQuant:
             logger.warning(f"found unsupported layer {type(layer)}, try to multiply scale directly ")
             layer.weight *= scale
 
-    def absorb_scales(self, layer_name, scale):  ##output channel
-        layer = self.get_module(layer_name)
-        if isinstance(layer, torch.nn.BatchNorm2d) or isinstance(layer, torch.nn.GroupNorm) or isinstance(layer,
-                                                                                                          torch.nn.InstanceNorm2d):
+    def _absorb_scales(self, layer_name, scale):  ##output channel
+        """
+        Absorb the scale to the layer at output channel
+        :param layer_name: The module name
+        :param scale: The scale to be absorbed
+        :return:
+        """
+        layer = self._get_module(layer_name)
+        if isinstance(layer, torch.nn.BatchNorm2d) or isinstance(layer, torch.nn.GroupNorm) or \
+                isinstance(layer, torch.nn.InstanceNorm2d):
             if layer.affine:
                 layer.weight *= scale
                 layer.bias *= scale
@@ -232,7 +287,14 @@ class SmoothQuant:
             if hasattr(layer, "bias") and layer.bias != None:
                 layer.bias *= scale
 
-    def adjust_parameters(self, absorb_to_layer, input_maxes, alpha=0.5):
+    def _adjust_parameters(self, absorb_to_layer, input_maxes, alpha=0.5):
+        """
+        adjust the weights and biases
+        :param absorb_to_layer: A dict mapping absorb layer to smooth quantized layer
+        :param input_maxes: The channel-wise input max info for layers
+        :param alpha: Alpha value to balance the quantization difficulty of activation and weight
+        :return:
+        """
         absorb_to_input_maxes = {}
         for key in absorb_to_layer.keys():
             layer_name = absorb_to_layer[key][0]
@@ -245,92 +307,142 @@ class SmoothQuant:
             layers = absorb_to_layer[key]
             weights = []
             for layer in layers:
-                weight = self.reshape_in_channel_to_last(layer)
+                weight = self._reshape_in_channel_to_last(layer)
                 weights.append(weight)
 
             weights = torch.cat(weights, dim=0)
 
             weight_max_per_channel = torch.max(torch.abs(weights), dim=0)[0]
             input_power = torch.pow(input_max, alpha)
-            logger.info(f"{max(input_max)}, {min(input_power)}")  ##TODO changed it to debug later
+
+            logger.warning(f"{max(input_max)}, {min(input_max)}")
             weight_power = torch.pow(weight_max_per_channel, 1 - alpha)
-            ##logger.info(f"{absorb_to_layer[key][0]} layer sparsity is {1.0-torch.count_nonzero(input_power)/input_power.numel()}")
-            ##adjust parameters
+            #logger.info(f"{absorb_to_layer[key][0]} layer sparsity is
+            # {1.0-torch.count_nonzero(input_power)/input_power.numel()}")
+
             scale = torch.clip(input_power / weight_power, min=1e-5)
             scale[input_power == 0] = 1.0
 
-            self.absorb_scales(key, 1.0 / scale)
+            self._absorb_scales(key, 1.0 / scale)
             absorb_scales_info[key] = 1.0 / scale
             layer_names = absorb_to_layer[key]
             for layer_name in layer_names:
-                self.scale_layer_weight(layer_name, scale)
+                self._scale_layer_weight(layer_name, scale)
                 weight_scales_info[layer_name] = scale
         return weight_scales_info, absorb_scales_info
 
-    def transform(self, alpha=0.5, percentile=99.999, op_types=['Linear', 'Conv2d', 'ConvTranspose2d'],
-                  scales_per_op=False, calib_num=100):
+    def _check_is_same_parameters(self, alpha, percentile, op_types,
+                                  scales_per_op, calib_iter):
         """
 
-          Currently we only handle layers whose could be abos
-          inert Mul op before each conv/matmul with adjusted weights
+        :param alpha:
+        :param percentile:
+        :param op_types:
+        :param scales_per_op:
+        :param calib_iter:
+        :return:
+        """
+        if len(self.input_maxes) == 0:
+            self.alpha = alpha
+            self.percentile = percentile
+            self.op_types = op_types
+            self.scales_per_op = scales_per_op
+            self.calib_iter = calib_iter
+            return False
+        if alpha != self.alpha or self.percentile != percentile or self.op_types != op_types \
+                or self.scales_per_op != scales_per_op or self.calib_iter != calib_iter:
+            self.alpha = alpha
+            self.percentile = percentile
+            self.op_types = op_types
+            self.scales_per_op = scales_per_op
+            self.calib_iter = calib_iter
+            return False
+        else:
+            return True
 
-          Args:
-              alpha: smooth alpha in SmoothQuant, 1.0 will fallback to SPIQ
-              percentile:Percentile of calibration to remove outliers
-              op_types: The op types whose input tensor will be dumped
-              scales_per_op: True, each op will have an individual scale, mainly for accuracy
-                             False, ops with the same input will share a scale, mainly for performance
-
-          Returns:
-              model: A modified onnx model
-
-          """
-
+    def transform(self, alpha=0.5, percentile=99.999, op_types=['Linear', 'Conv2d', 'ConvTranspose2d'],
+                  scales_per_op=False, calib_iter=100):
+        """
+        The main entry of smooth quant
+        :param alpha: Alpha value to balance the quantization difficulty of activation and weight, please refer
+        to the paper for more details
+        :param percentile: Not supported now
+        :param op_types: The op typed to be smooth quantized
+        :param scales_per_op: Not supported now
+        :param calib_iter: Data size for calibration
+        :return: A FP32 model with the same architecture as the orig model but with different weight which will be
+        benefit to quantization
+        """
+        if not isinstance(self.model, torch.nn.Module):
+            logger.warning("smooth quant is ignored since the model is not a torch module")
+            return self.model
+        matched = self._check_is_same_parameters(alpha, percentile, op_types, scales_per_op, calib_iter)
         with torch.no_grad():
-            absorb_to_layer, no_absorb_layers = self.trace(
-                op_types)  ##TODO we need to insert mul layer for no_absorb_layers later
-            if absorb_to_layer == None:
-                logger.warning("sorry, could not trace the model")  ##TODO convert to insert mul mode
-                return self.model
+            input_maxes = self.input_maxes
+            if matched == False:  ##avoid multiple calibaration during tuning
+                self.recover()
+                self.absorb_to_layer, no_absorb_layers = self._trace(
+                    op_types)  ##TODO we need to insert mul layer for no_absorb_layers later
+                if self.absorb_to_layer == None and no_absorb_layers == None:
+                    logger.warning("sorry, could not trace the model, smooth quant is ignored")
+                    return self.model
 
-            input_maxes = self.calibration(absorb_to_layer, calib_num)
+                input_maxes = self._calibrate(self.absorb_to_layer, calib_iter)
 
-            self.weight_scale_info, self.absorb_scales_info = self.adjust_parameters(absorb_to_layer, input_maxes,
-                                                                                     alpha)
+            self.weight_scale_info, self.absorb_scales_info = self._adjust_parameters(self.absorb_to_layer, input_maxes,
+                                                                                      alpha)
             return self.model
 
     def recover(self):
+        """
+        recover the model weights
+        :return:
+        """
         with torch.no_grad():
             for key in self.weight_scale_info:
-                self.scale_layer_weight(key, 1.0 / self.weight_scale_info[key])
+                self._scale_layer_weight(key, 1.0 / self.weight_scale_info[key])
             for key in self.absorb_scales_info:
-                self.absorb_scales(key, 1.0 / self.absorb_scales_info[key])
+                self._absorb_scales(key, 1.0 / self.absorb_scales_info[key])
 
-    def trace(self, op_types):
+    def _trace(self, op_types):
+        """
+        Try the model to find the layers which can be smooth quantized.
+        :param op_types: The op types to be smooth quantized
+        :return:
+        absorb_to_layer: A dict, absorb layer name:layers to be smooth quantized
+        no_absorb_layers: A list saving the layers which could not find the absorb layer
+        """
         tg = GraphTrace()
         for idx, input in enumerate(self.dataloader):
             example_inputs = input
             break
-        # for batch in (self.dataset):
-        #     example_inputs = batch['input_ids'].to(self.device).unsqueeze(0)
-        #     break
-
         absorb_to_layer, no_absorb_layers = tg.get_absorb_to_layer(self.traced_model, example_inputs, op_types)
         return absorb_to_layer, no_absorb_layers
 
 
-class GraphTrace:
-    def __init__(self):
-        # self.aten_to_op = {
-        #     "aten::linear": "Linear",
-        #     "aten::layer_norm": "layer_norm",
-        #     "aten::to": "to",
-        #     "aten::_convolution": "Conv",
-        #     "aten::group_norm": "group_norm",
-        #     "aten::batch_norm": "batch_norm",
-        #     "aten::instance_norm": "instance_norm"
-        # }
+def get_parent(node):
+    if node.inputs() == None:
+        return None
+    return list(node.inputs())[0].node()
 
+
+def get_module(model, key):
+    attrs = key.split('.')
+    module = model
+    for attr in attrs:
+        try:
+            attr = int(attr)
+            module = module[attr]
+        except:
+            module = getattr(module, attr)
+    return module
+
+
+class GraphTrace:
+    """
+    """
+
+    def __init__(self):
         self.supported_torch_module_to_aten = {
             "Linear": "aten::linear",
             "Conv2d": "aten::_convolution",
@@ -340,7 +452,7 @@ class GraphTrace:
             "GroupNorm": "aten::group_norm",
             "InstanceNorm2d": "instance_norm",
         }
-        ##TODO, must statisfy ax=f(ax),current skip layer may be incomplete
+        ##TODO, must statisfy af(x)=f(ax),current skip layer may be incomplete
         self.skip_ops_to_find_absorb = ["aten::to",
                                         "aten::relu",
                                         "aten::leaky_relu"
@@ -368,19 +480,8 @@ class GraphTrace:
                     traced_model = torch.jit.trace(model, dummy_input[0], strict=False)
                     traced_model = torch.jit.freeze(traced_model.eval(), optimize_numerics=optimize_numerics)
                 except:
-                    assert False, "can't trace the model"
+                    pass
         return traced_model
-
-    # def kind_to_op_type(self, kind):
-    #     if kind in self.aten_to_op:
-    #         return self.aten_to_op[kind]
-    #     else:
-    #         return kind.split("::")[-1]
-
-    def get_parent(self, node):
-        if node.inputs() == None:
-            return None
-        return list(node.inputs())[0].node()
 
     def get_nodes(self, traced_model, op_types=['Linear']):
         if isinstance(op_types, str):
@@ -398,10 +499,10 @@ class GraphTrace:
     def get_prev_absorb_layer(self, nodes):
         prev_absorb_layer = []
         for node in nodes:
-            parent = self.get_parent(node)
+            parent = get_parent(node)
             while 1:
                 if parent.kind() in self.skip_ops_to_find_absorb:
-                    parent = self.get_parent(parent)
+                    parent = get_parent(parent)
                     continue
                 if parent.kind() in self.could_absorb_layers:
                     prev_absorb_layer.append(parent)
@@ -423,7 +524,7 @@ class GraphTrace:
     def get_absorb_to_layer(self, model, example_input, op_types):
         traced_model = self.trace(model, example_input)
         if traced_model == None:
-            return None
+            return None, None
         aten_op_types = self.mapping_torch_module_to_aten(op_types)
         nodes_types = self.get_nodes(traced_model, aten_op_types)
         nodes = [node_type[0] for node_type in nodes_types]
@@ -449,13 +550,13 @@ class GraphTrace:
 
         for key in absorb_to_layer.keys():
 
-            absorb_layer = self.get_module(model, key)
+            absorb_layer = get_module(model, key)
             layer_type = absorb_layer.__class__.__name__
             if layer_type not in self.supported_torch_module_to_aten.keys():
                 continue
             supported = True
             for layer_name in absorb_to_layer[key]:
-                layer = self.get_module(model, layer_name)
+                layer = get_module(model, layer_name)
                 layer_type = layer.__class__.__name__
                 if layer_type not in self.supported_torch_module_to_aten.keys():
                     supported = False
@@ -463,14 +564,3 @@ class GraphTrace:
             if supported:
                 res[key] = absorb_to_layer[key]
         return res
-
-    def get_module(self, model, key):
-        attrs = key.split('.')
-        module = model
-        for attr in attrs:
-            try:
-                attr = int(attr)
-                module = module[attr]
-            except:
-                module = getattr(module, attr)
-        return module

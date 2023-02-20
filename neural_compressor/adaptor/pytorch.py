@@ -1274,10 +1274,10 @@ class PyTorchAdaptor(TemplateAdaptor):
         del op_cfgs['bf16_ops_list']
         gc.collect()
 
-        smooth_quant_enable = True
-        if smooth_quant_enable:
-            sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
-            model._model = sq.transform(alpha=0.5)
+        # smooth_quant_enable = True
+        # if smooth_quant_enable:
+        #     sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
+        #     model._model = sq.transform(alpha=0.5)
 
         if self.performance_only:
             q_model = model
@@ -2287,10 +2287,10 @@ class PyTorch_IPEXAdaptor(TemplateAdaptor):  # pragma: no cover
         Returns:
             (dict): quantized model
         """
-        smooth_quant_enable = True
-        if smooth_quant_enable:
-            sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
-            model._model = sq.transform(alpha=0.5)
+        # smooth_quant_enable = True
+        # if smooth_quant_enable:
+        #     sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
+        #     model._model = sq.transform(alpha=0.5)
 
         if self.performance_only:
             inc_tmp_model = model
@@ -2775,10 +2775,10 @@ class PyTorch_FXAdaptor(TemplateAdaptor):
         self.tune_cfg["approach"] = self.approach
         self.tune_cfg["reduce_range"] = REDUCE_RANGE
         self.tune_cfg["framework"] = "pytorch_fx"
-        smooth_quant_enable = True
-        if smooth_quant_enable:
-            sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
-            model._model = sq.transform(alpha=0.5)
+        # smooth_quant_enable = True
+        # if smooth_quant_enable:
+        #     sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
+        #     model._model = sq.transform(alpha=0.5)
         # PyTorch 1.13 and above version, need example_inputs for fx trace, but it not realy used,
         # so set it to None.
         example_inputs = None

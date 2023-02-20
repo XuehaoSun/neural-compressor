@@ -4,11 +4,36 @@ from tqdm import tqdm
 from datasets import load_dataset
 import sys
 from transformers import set_seed
+from torch.nn.functional import pad
 
 sys.path.append('./')
+import intel_extension_for_pytorch
 
-set_seed(42)
 from neural_compressor.adaptor.torch_utils.sq import SmoothQuant
+set_seed(42)
+#
+# -*- coding: utf-8 -*-
+#
+# Copyright (c) 2023 Intel Corporation
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#    http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
+import torch
+
+import logging
+
+logger = logging.getLogger()
+
 
 
 class Evaluator:
@@ -19,7 +44,6 @@ class Evaluator:
 
         # tokenize the dataset
         def tokenize_function(examples):
-            ##example = self.tokenizer(examples['text'], padding='max_length', max_length=512)
             example = self.tokenizer(examples['text'])
             return example
 
@@ -36,6 +60,7 @@ class Evaluator:
             input_ids = batch['input_ids'].unsqueeze(0)
             label = input_ids[:, -1]
             pad_len = 512 - input_ids.shape[1]
+            pad_len = 0  ##set to 0
             input_ids = pad(input_ids, (0, pad_len), value=1)
             outputs = model(input_ids)
 
@@ -43,7 +68,7 @@ class Evaluator:
             pred = last_token_logits.argmax(dim=-1)
             total += label.size(0)
             hit += (pred == label).sum().item()
-            if index % 100 == 0:
+            if index % 10 == 0:
                 print(hit / total)
             index += 1
 
@@ -74,9 +99,7 @@ class CalibDataloader():
             yield input_ids
 
 
-##model_name = "/data2/models/opt-125m/"
-model_name = "facebook/opt-125m"
-##model_name = "facebook/opt-6.7b"
+model_name = "/home2/sparse/wenhuach/gpt-j-6B"
 tokenizer = transformers.AutoTokenizer.from_pretrained(model_name, model_max_length=512)
 dataset = load_dataset('lambada', split='validation')
 dataset = dataset.shuffle(seed=42)
@@ -103,13 +126,14 @@ my_dataset = dataset.map(tokenize_function, batched=True)
 my_dataset.set_format(type='torch', columns=['input_ids'])
 
 
+sq = SmoothQuant(model, my_dataset)
+model = sq.transform()
+
 def eval_func(model):
     acc = evaluator.evaluate(model)
     return acc
 
 
-sq = SmoothQuant(model, my_dataset)  ##enable sq
-model = sq.transform()
 from neural_compressor import PostTrainingQuantConfig
 from neural_compressor import quantization
 
@@ -117,7 +141,6 @@ conf = PostTrainingQuantConfig(backend='ipex',
                                ##recipes={"smooth_quant":True},
                                excluded_precisions=["bf16"])
 conf.performance_only = True
-
 sq = SmoothQuant(model, calib_dataloader)
 model = sq.transform()
 q_model = quantization.fit(model,
@@ -126,4 +149,4 @@ q_model = quantization.fit(model,
                            eval_func=eval_func
                            )
 
-q_model.save('opt-6.7b-int8-sq-calib-train')
+q_model.save('gptj-6b-int8-sq-calib-val')
