@@ -108,8 +108,6 @@ def eval_func(model):
     return acc
 
 
-sq = SmoothQuant(model, my_dataset)  ##enable sq
-model = sq.transform()
 from neural_compressor import PostTrainingQuantConfig
 from neural_compressor import quantization
 
