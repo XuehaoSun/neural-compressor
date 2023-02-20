@@ -122,9 +122,6 @@ def tokenize_function(examples):
     return example
 
 
-my_dataset = dataset.map(tokenize_function, batched=True)
-my_dataset.set_format(type='torch', columns=['input_ids'])
-
 
 def eval_func(model):
     acc = evaluator.evaluate(model)
@@ -139,7 +136,7 @@ conf = PostTrainingQuantConfig(backend='ipex',
                                excluded_precisions=["bf16"])
 conf.performance_only = True
 sq = SmoothQuant(model, calib_dataloader)
-model = sq.transform()
+model = sq.transform(alpha=1.0)
 q_model = quantization.fit(model,
                            conf,
                            calib_dataloader=calib_dataloader,

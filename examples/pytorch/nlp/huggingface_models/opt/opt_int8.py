@@ -6,10 +6,10 @@ import sys
 from transformers import set_seed
 
 sys.path.append('./')
-
+from torch.nn.functional import pad
 set_seed(42)
 from neural_compressor.adaptor.torch_utils.sq import SmoothQuant
-
+import intel_extension_for_pytorch
 
 class Evaluator:
     def __init__(self, dataset, tokenizer, device):
@@ -99,8 +99,6 @@ def tokenize_function(examples):
     return example
 
 
-my_dataset = dataset.map(tokenize_function, batched=True)
-my_dataset.set_format(type='torch', columns=['input_ids'])
 
 
 def eval_func(model):
