@@ -14,7 +14,7 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+from memory_profiler import profile
 import copy
 import gc
 import math
@@ -1274,10 +1274,12 @@ class PyTorchAdaptor(TemplateAdaptor):
         del op_cfgs['bf16_ops_list']
         gc.collect()
 
-        # smooth_quant_enable = True
-        # if smooth_quant_enable:
-        #     sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
-        #     model._model = sq.transform(alpha=0.5)
+        smooth_quant_enable = True
+        if smooth_quant_enable:
+            print('====')
+            sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
+            model._model = sq.transform(alpha=0.5)
+            print('====')
 
         if self.performance_only:
             q_model = model
@@ -2275,6 +2277,7 @@ class PyTorch_IPEXAdaptor(TemplateAdaptor):  # pragma: no cover
         self.device = 'ipex'
 
     @dump_elapsed_time("Pass quantize model")
+    @profile
     def quantize(self, tune_cfg, model, dataloader, q_func=None):
         """Execute the quantize process on the specified model.
 
@@ -2287,10 +2290,10 @@ class PyTorch_IPEXAdaptor(TemplateAdaptor):  # pragma: no cover
         Returns:
             (dict): quantized model
         """
-        # smooth_quant_enable = True
-        # if smooth_quant_enable:
-        #     sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
-        #     model._model = sq.transform(alpha=0.5)
+        smooth_quant_enable = False
+        if smooth_quant_enable:
+            sq = torch_utils.sq.SmoothQuant(model._model, dataloader)  ##TODO support calib size here
+            model._model = sq.transform(alpha=0.5)
 
         if self.performance_only:
             inc_tmp_model = model
@@ -2532,6 +2535,7 @@ class PyTorch_IPEXAdaptor(TemplateAdaptor):  # pragma: no cover
         self.pre_optimized_model = model
         return self._get_quantizable_ops(model)
 
+    @profile
     def _get_quantizable_ops_recursively(self, model, prefix, quantizable_ops):
         """This is a helper function for `query_fw_capability`,
            and it will get all quantizable ops from model.

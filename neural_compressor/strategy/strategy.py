@@ -16,7 +16,7 @@
 # limitations under the License.
 
 """The base class for tuning strategy."""
-
+from memory_profiler import profile
 from abc import abstractmethod
 from enum import EnumMeta
 import os
@@ -184,6 +184,7 @@ class TuneStrategy(object):
         raise NotImplementedError
 
 
+    @profile
     def traverse(self):
         """Traverse the tuning space.
 
@@ -201,7 +202,7 @@ class TuneStrategy(object):
             self.eval_func = self._fake_eval_func
 
         # get fp32 model baseline
-        ##self.baseline = [0.6000, [0, 0]]
+        #self.baseline = [0.0, [0, 0]]
         if self.baseline is None:
             logger.info("Get FP32 model baseline.")
             self._fp32_model = self.model

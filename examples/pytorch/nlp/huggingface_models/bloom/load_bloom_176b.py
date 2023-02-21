@@ -5,6 +5,7 @@ import time
 from tqdm import tqdm
 from datasets import load_dataset
 import intel_extension_for_pytorch
+import os
 from torch.nn.functional import pad
 
 sys.path.append('./')
@@ -23,7 +24,7 @@ class Evaluator:
         model.eval()
         # The task is to predict the last word of the input.
         total, hit = 0, 0
-        last_index = 136
+        #last_index = 149
         last_index = -1
         acc_tmp = None
         num_samples_tmp = (last_index+1)*self.batch_size
@@ -32,7 +33,7 @@ class Evaluator:
             if index <= last_index:
                 continue
             if index == last_index + 1:
-                acc_tmp = 0.4607664233576642
+                acc_tmp = 0.7220833333333333
             input_ids = batched_input
             start = time.time()
             outputs = model(input_ids)
@@ -84,7 +85,7 @@ class INCDataloader():
         label = input_id[:, -1].to(self.device)
         pad_len = self.pad_len - input_id.shape[1]
         label_index = -2 - pad_len
-        input_id = pad(input_id, (0, pad_len), value=1)
+        input_id = pad(input_id, (0, pad_len), value=3)
 
         return (input_id, label, label_index)
 
@@ -116,28 +117,43 @@ class INCDataloader():
         return self.length
 
 
-model_name = "bigscience/bloom-560m"
+model_name = "/data2/dataset/bloom"
+#model_name = "/dev/shm/bloom"
+#model_name = "/data2/models/bloom-560m"
 tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
 
 dataset = load_dataset('lambada', split='validation')
 dataset = dataset.shuffle(seed=42)
+#dataset = dataset.select(range(12))
 
-evaluator = Evaluator(dataset, tokenizer, 16, 'cpu')
+evaluator = Evaluator(dataset, tokenizer, 32, 'cpu')
 
 load_int8 = False
 if load_int8:
     from neural_compressor.utils.pytorch import load
-    model = load('saved_results')
+    model = load("/data2/models/bloom-int8-no-sq")
 else:
-    model = transformers.AutoModelForCausalLM.from_pretrained(
-        model_name,
-        #device_map='auto',
-        #torch_dtype='auto',
-        torchscript=True,  # torchscript will force `return_dict=False` to avoid jit errors
-    )
+    config = transformers.AutoConfig.from_pretrained(model_name)
+    config.torchscript=True
+    config.device_map='auto'
+    config.torch_dtype='auto'
+    model = transformers.AutoModelForCausalLM.from_config(config)
+
+    from safetensors import safe_open
+    for file in os.listdir(model_name):
+        if not file.endswith('safetensors'):
+            continue
+        print(file)
+        weights = {}
+        with safe_open(os.path.join(model_name, file), framework='pt', device='cpu') as f:
+            for k in f.keys():
+                weights['transformer.'+k] = f.get_tensor(k)
+        model.load_state_dict(weights, strict=False)
+    model.tie_weights()
+
     tokenizer = transformers.AutoTokenizer.from_pretrained(model_name)
     dataset = load_dataset('lambada', split='validation')
-    input = tokenizer( dataset[0]['text'], padding='max_length', max_length=195, return_tensors='pt')
+    input = tokenizer(dataset[0]['text'], padding='max_length', max_length=196, return_tensors='pt')
     example_input = input['input_ids'][0].to('cpu').unsqueeze(0)
     model = torch.jit.trace(model, example_input)
     model = torch.jit.freeze(model.eval())

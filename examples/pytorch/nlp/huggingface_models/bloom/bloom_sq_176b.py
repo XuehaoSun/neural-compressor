@@ -4,6 +4,7 @@ import sys
 import time
 from tqdm import tqdm
 from datasets import load_dataset
+import os
 from torch.nn.functional import pad
 
 sys.path.append('./')
@@ -388,16 +389,32 @@ calib_dataloader = INCDataloader(
 
 evaluator = Evaluator(dataset, tokenizer, 16, 'cpu')
 
-model = transformers.AutoModelForCausalLM.from_pretrained(
-   model_name,
-   torchscript=True,  # torchscript will force `return_dict=False` to avoid jit errors
-)
+model_name = "/data2/dataset/bloom"
+config = transformers.AutoConfig.from_pretrained(model_name)
+config.torchscript=True
+config.device_map='auto'
+config.torch_dtype='auto'
+model = transformers.AutoModelForCausalLM.from_config(config)
+
+
+from safetensors import safe_open
+
+for file in os.listdir(model_name):
+    weights = {}
+    if not file.endswith('safetensors'):
+        continue
+    with safe_open(os.path.join(model_name, file), framework='pt', device='cpu') as f:
+        for k in f.keys():
+            weights['transformer.'+k] = f.get_tensor(k)
+    model.load_state_dict(weights, strict=False)
+model.tie_weights()
+
+
 # Enable smoothquant to transfer weights before quantization
-model.eval()
 sq = SmoothQuant(model, calib_dataloader)
-# model = sq.transform()
-# if transform is executed before, you can use load to avoid duplicated calibration.
-model = sq.load()
+model = sq.transform()
+# model = sq.load()
+
 
 def eval_func(model):
     acc = evaluator.evaluate(model)
@@ -414,4 +431,4 @@ q_model = quantization.fit(model,
                            calib_dataloader=calib_dataloader,
                            eval_func=None)
 
-q_model.save('saved_results')
+q_model.save("/data2/models/bloom-int8-sq")
