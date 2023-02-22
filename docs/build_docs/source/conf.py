@@ -33,7 +33,8 @@ extensions = [
         'sphinx_md',
         'autoapi.extension',
         'sphinx.ext.napoleon',
-        'sphinx.ext.githubpages'
+        'sphinx.ext.githubpages',
+        'undocinclude.extension'
         ]
 
 autoapi_dirs = ['../../neural_compressor']
@@ -41,6 +42,7 @@ autoapi_root = "autoapi"
 autoapi_keep_files = True
 autoapi_add_toctree_entry = False
 autosummary_generate = True
+autoapi_template_dir = './autoApi_templates'
 autoapi_options = ['members',  'show-inheritance',
                    'show-module-summary', 'imported-members', ]
 autoapi_ignore = []
@@ -60,7 +62,7 @@ pygments_style = 'sphinx'
 # https://www.sphinx-doc.org/en/master/usage/configuration.html#options-for-html-output
 
 #html_theme = 'alabaster'
-html_theme = 'sphinx_rtd_theme'
+html_theme = 'sphinx_book_theme'
 
 html_static_path = ['_static']
 

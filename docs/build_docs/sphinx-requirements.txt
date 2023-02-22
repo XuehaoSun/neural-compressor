@@ -1,6 +1,7 @@
-sphinx==6.1.1
-sphinx_rtd_theme
+sphinx==4.1.1
+sphinx-book-theme
 recommonmark
 sphinx-markdown-tables
 sphinx-md
 sphinx-autoapi
+undocinclude
