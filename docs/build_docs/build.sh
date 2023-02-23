@@ -110,21 +110,40 @@ VERSION=`cat source/version.txt`
 DST_FOLDER=${DRAFT_FOLDER}/${VERSION}
 LATEST_FOLDER=${DRAFT_FOLDER}/latest
 SRC_FOLDER=build/html
+AUTO_FOLDER=build/html/autoapi/neural_compressor
 
 RELEASE_FOLDER=./gh-pages
 ROOT_DST_FOLDER=${RELEASE_FOLDER}/${VERSION}
 ROOT_LATEST_FOLDER=${RELEASE_FOLDER}/latest
 
+function getdir(){
+    for element in `ls $1`
+    do  
+        dir_or_file=$1"/"$element
+        if [ -d $dir_or_file ]
+        then 
+            getdir $dir_or_file
+        else
+            if [[ $dir_or_file =~ ".html" ]]
+            then 
+                cp -f $dir_or_file ".tmp"
+                sed 's/<span class\=\"sig-prename descclassname\"><span class\=\"pre\">.*\.<\/span><\/span>//g; s/<em class\=\"sig-param\"><span class\=\"n\"><span class\=\"pre\">.*<\/span><\/span><\/em>//g;' ".tmp" > $dir_or_file
+                rm -f ".tmp"
+            fi
+        fi  
+    done
+  }
+
 if [[ ${UPDATE_VERSION_FOLDER} -eq 1 ]]; then
   echo "create ${DST_FOLDER}"
   rm -rf ${DST_FOLDER}/*
   mkdir -p ${DST_FOLDER}
+  getdir ${AUTO_FOLDER}
   cp -r ${SRC_FOLDER}/* ${DST_FOLDER}
   python update_html.py ${DST_FOLDER} ${VERSION}
   cp -r ./source/docs/source/imgs ${DST_FOLDER}/docs/source
   cp -r ./source/docs/source/neural_coder/extensions/neural_compressor_ext_vscode/images ${DST_FOLDER}/docs/source/neural_coder/extensions/neural_compressor_ext_vscode
   cp -r ./source/docs/source/neural_coder/extensions/screenshots ${DST_FOLDER}/docs/source/neural_coder/extensions
-
   cp source/_static/index.html ${DST_FOLDER}
 else
   echo "skip to create ${DST_FOLDER}"
@@ -134,11 +153,14 @@ if [[ ${UPDATE_LATEST_FOLDER} -eq 1 ]]; then
   echo "create ${LATEST_FOLDER}"
   rm -rf ${LATEST_FOLDER}/*
   mkdir -p ${LATEST_FOLDER}
+  getdir ${AUTO_FOLDER}
   cp -r ${SRC_FOLDER}/* ${LATEST_FOLDER}
   python update_html.py ${LATEST_FOLDER} ${VERSION}
   cp -r ./source/docs/source/imgs ${LATEST_FOLDER}/docs/source
   cp -r ./source/docs/source/neural_coder/extensions/neural_compressor_ext_vscode/images ${LATEST_FOLDER}/docs/source/neural_coder/extensions/neural_compressor_ext_vscode
   cp -r ./source/docs/source/neural_coder/extensions/screenshots ${LATEST_FOLDER}/docs/source/neural_coder/extensions
+  cp -r ./source/docs/source/neural_coder/extensions/screenshots ${LATEST_FOLDER}/docs/source/neural_coder/extensions
+ 
   cp source/_static/index.html ${LATEST_FOLDER}
 else
   echo "skip to create ${LATEST_FOLDER}"

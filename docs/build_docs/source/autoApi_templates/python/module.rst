@@ -10,6 +10,12 @@
 
 
 {% if obj.docstring %}
+Overview
+--------------------------
+
+.. undocinclude:: ../../../../../{{obj.name.split('.')|join('/')}}.py
+
+
 .. autoapi-nested-parse::
 
    {{ obj.docstring|indent(3) }}
@@ -57,10 +63,10 @@ Submodules
 {% set visible_children = obj.children|selectattr("display")|rejectattr("imported")|list %}
 {% endif %}
 {% if visible_children %}
-{{obj.name}}Contents ????.
--------------------------------------------------
+Detailed Documentation
+--------------------------
 
-.. undocinclude:: ../../{{obj.name.split('.')|join('/')}}.py
+.. undocinclude:: ../../../../../{{obj.name.split('.')|join('/')}}.py
 
 .. .. literalinclude:: ../../../../src/{{obj.name}}.py
 ..    :language: python
