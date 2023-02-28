@@ -116,7 +116,7 @@ class eval_classifier_optimized_graph:
                 'filter': None
             }
             eval_dataloader = create_dataloader('tensorflow', eval_dataloader_args)
-            op_name_list = {
+            op_name_dict = {
                         'densenet121/MaxPool2D/MaxPool': {
                           'activation':  {'dtype': ['fp32']}
                         },
@@ -125,7 +125,7 @@ class eval_classifier_optimized_graph:
                         }
                     }
             conf = PostTrainingQuantConfig(calibration_sampling_size=[5, 10, 50, 100],
-                                           op_name_list=op_name_list)
+                                           op_name_dict=op_name_dict)
             from neural_compressor.metric import TensorflowTopK
             top1 = TensorflowTopK(k=1)
             from neural_compressor.data import LabelShift

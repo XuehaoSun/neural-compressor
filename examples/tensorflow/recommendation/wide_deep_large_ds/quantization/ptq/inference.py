@@ -191,7 +191,7 @@ class eval_classifier_optimized_graph:
             inputs=["new_numeric_placeholder", "new_categorical_placeholder"],
             outputs=["import/head/predictions/probabilities"],
             calibration_sampling_size=[2000],
-            op_name_list={
+            op_name_dict={
                 'import/dnn/hiddenlayer_0/MatMul': {
                 'activation':  {'dtype': ['uint8'], 'algorithm': ['minmax'], 'scheme':['asym']},
                 }

@@ -264,7 +264,7 @@ def main():
         accuracy_criterion.higher_is_better = False
         accuracy_criterion.relative = 0.11
         config = PostTrainingQuantConfig(approach='dynamic', 
-                                         op_name_list={'MatMul_2924': {
+                                         op_name_dict={'MatMul_2924': {
                                                             'activation':  {'dtype': ['fp32']},
                                                             'weight': {'dtype': ['fp32']}
                                                         }},

@@ -135,7 +135,7 @@ class TestPytorch2ONNX(unittest.TestCase):
                     }
                     quant_conf = PostTrainingQuantConfig(
                         approach="static",
-                        op_name_list=fallback_op,
+                        op_name_dict=fallback_op,
                     )
                 q_model = quantization.fit(
                     model,
@@ -188,7 +188,7 @@ class TestPytorch2ONNX(unittest.TestCase):
                     }
                     quant_conf = PostTrainingQuantConfig(
                         approach="static",
-                        op_name_list=fallback_op,
+                        op_name_dict=fallback_op,
                     )
                 q_model = quantization.fit(
                     model,
@@ -243,7 +243,7 @@ class TestPytorch2ONNX(unittest.TestCase):
                     }
                     quant_conf = PostTrainingQuantConfig(
                         approach="static",
-                        op_name_list=fallback_op,
+                        op_name_dict=fallback_op,
                     )
                 q_model = quantization.fit(
                     model,
@@ -321,7 +321,7 @@ class TestPytorch2ONNX(unittest.TestCase):
                     }
                     quant_conf = PostTrainingQuantConfig(
                         approach="static",
-                        op_name_list=fallback_op,
+                        op_name_dict=fallback_op,
                     )
                 q_model = quantization.fit(
                     model,
@@ -379,7 +379,7 @@ class TestPytorch2ONNX(unittest.TestCase):
                     }
                     quant_conf = PostTrainingQuantConfig(
                         approach="static",
-                        op_name_list=fallback_op,
+                        op_name_dict=fallback_op,
                     )
                 q_model = quantization.fit(
                     model,
@@ -439,7 +439,7 @@ class TestPytorch2ONNX(unittest.TestCase):
                     }
                     quant_conf = PostTrainingQuantConfig(
                         approach="static",
-                        op_name_list=fallback_op,
+                        op_name_dict=fallback_op,
                     )
                 q_model = quantization.fit(
                     model,

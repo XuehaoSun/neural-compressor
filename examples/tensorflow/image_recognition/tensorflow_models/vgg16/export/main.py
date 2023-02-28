@@ -136,7 +136,7 @@ class eval_classifier_optimized_graph:
                     'filter': None
                 }
                 eval_dataloader = create_dataloader('tensorflow', eval_dataloader_args)
-                op_name_list = {
+                op_name_dict = {
                     'resnet_model/dense/MatMul':
                                 {
                                 'activation':  {'dtype': ['fp32']},
@@ -145,7 +145,7 @@ class eval_classifier_optimized_graph:
                             }
                 conf = PostTrainingQuantConfig(backend='itex', calibration_sampling_size=[50, 100],
                                             outputs=['softmax_tensor'],
-                                            op_name_list=op_name_list)
+                                            op_name_dict=op_name_dict)
                 def eval(model):
                     return eval_func_tf(model, eval_dataloader, top1, postprocess)
                 q_model = quantization.fit(args.input_graph, conf=conf, calib_dataloader=calib_dataloader,
