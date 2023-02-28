@@ -79,6 +79,23 @@ def strategy_registry(cls):
 class TuneStrategy(object):
     """Basic class for tuning strategy."""
 
+    def _disable_recipes_and_op_wise_setting(self, conf):
+        usr_cfg = conf.usr_cfg
+        logger.info("*** The cfg before disable recipes and op-wise setting.")
+        logger.info(usr_cfg)
+        logger.info("*** Force disable recipes and op-wise setting")
+        usr_cfg.quantization.recipes.scale_propagation_max_pooling = True
+        usr_cfg.quantization.recipes.scale_propagation_concat = True
+        usr_cfg.quantization.recipes.first_conv_or_matmul_quantization = True
+        usr_cfg.quantization.recipes.last_conv_or_matmul_quantization = True
+        usr_cfg.quantization.recipes.pre_post_process_quantization = True
+        usr_cfg.quantization.model_wise = {'weight': {'bit': [7.0]}, 'activation': {}}
+        usr_cfg.quantization.optype_wise = None
+        usr_cfg.quantization.op_wise = None
+        logger.info("*** The cfg after disable recipes and op-wise setting.")
+        logger.info(usr_cfg)
+        return usr_cfg
+
     def __init__(self, model, conf, q_dataloader=None, q_func=None, eval_dataloader=None,
                  eval_func=None, resume=None, q_hooks=None):
         """Init the TuneStrategy.
@@ -99,7 +116,7 @@ class TuneStrategy(object):
             best_qmodel: The best quantized model that generated during the tuning process.
         """
         self.model = model
-        self.cfg = conf.usr_cfg
+        self.cfg = self._disable_recipes_and_op_wise_setting(conf)
         self.cfg_bk = copy.deepcopy(self.cfg)
         self.history_path = self._create_path(self.cfg.tuning.workspace.path, './history.snapshot')
         self.deploy_path = self._create_path(self.cfg.tuning.workspace.path, 'deploy.yaml')
