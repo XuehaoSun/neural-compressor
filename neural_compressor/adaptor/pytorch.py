@@ -448,6 +448,7 @@ def _observer(algorithm,
     if dtype in dtype_dict:
         dtype = dtype_dict[dtype]
     else:  # pragma: no cover
+        #TODO to handle int4
         assert False, "Unsupport dtype with {}".format(dtype)
 
     if algorithm == 'placeholder' or dtype == torch.float:  # pragma: no cover
@@ -1028,12 +1029,12 @@ class TemplateAdaptor(Adaptor):
         tmp_model.eval()
         quantizable_ops = []
         self._get_quantizable_ops_recursively(tmp_model, '', quantizable_ops)
-        capability = self.query_handler.get_quantization_capability()['dynamic'] \
-            if self.approach == "post_training_dynamic_quant" else \
-            self.query_handler.get_quantization_capability()['quant_aware'] \
-            if self.approach == "quant_aware_training" else \
-            self.query_handler.get_quantization_capability()['static']
-
+        # capability = self.query_handler.get_quantization_capability()['dynamic'] \
+        #     if self.approach == "post_training_dynamic_quant" else \
+        #     self.query_handler.get_quantization_capability()['quant_aware'] \
+        #     if self.approach == "quant_aware_training" else \
+        #     self.query_handler.get_quantization_capability()['static']
+        
         q_capability = {}
         q_capability['optypewise'] = OrderedDict()
         q_capability['opwise'] = OrderedDict()
@@ -1059,8 +1060,41 @@ class TemplateAdaptor(Adaptor):
         else:
             additional_skipped_module_classes = {'LayerNorm', 'InstanceNorm3d', 'Dropout'}
         no_fp32_ops = {'QuantStub'}
+        
         for pair in capability_pair:
-            capability, mode = pair
+            capability, mode = pair[0]['int4'], pair[1]
+            for q_op in quantizable_ops:
+                if q_op not in q_capability['opwise']:
+                    q_capability['opwise'][q_op] = []
+                if q_op[1] not in q_capability['optypewise']:
+                    q_capability['optypewise'][q_op[1]] = []
+
+                if mode == 'static' and self.approach != "quant_aware_training" and \
+                    q_op[1] in ['LSTM', 'GRU', 'LSTMCell', 'GRUCell', 'RNNCell']:
+                    continue
+                if q_op[1] in capability:
+                    op_cfg = copy.deepcopy(capability[q_op[1]])
+                else:
+                    continue
+
+                op_cfg['activation']['quant_mode'] = mode if q_op[1] not in \
+                    ['LSTM', 'GRU', 'LSTMCell', 'GRUCell', 'RNNCell'] else 'dynamic'
+
+                # skip the op that only include fp32
+                if q_op[1] not in additional_skipped_module_classes:
+                    if op_cfg not in q_capability['opwise'][q_op]:
+                        q_capability['opwise'][q_op].append(op_cfg)
+                    if op_cfg not in q_capability['optypewise'][q_op[1]]:
+                        q_capability['optypewise'][q_op[1]].append(op_cfg)
+
+                if q_op[1] not in no_fp32_ops:
+                    if fp32_config not in q_capability['opwise'][q_op]:
+                        q_capability['opwise'][q_op].append(fp32_config)
+                    if fp32_config not in q_capability['optypewise'][q_op[1]]:
+                        q_capability['optypewise'][q_op[1]].append(fp32_config)
+        
+        for pair in capability_pair:
+            capability, mode = pair[0]['int8'], pair[1]
             for q_op in quantizable_ops:
                 if q_op not in q_capability['opwise']:
                     q_capability['opwise'][q_op] = []
@@ -1098,7 +1132,6 @@ class TemplateAdaptor(Adaptor):
             self._get_bf16_ops_recursively(tmp_model, '', bf16_ops)
             mixed_capability = self._combine_capability(bf16_ops, q_capability)
             return mixed_capability
-
         return q_capability
 
     def _get_bf16_ops_recursively(self, model, prefix, bf16_ops):
@@ -3906,8 +3939,28 @@ class PyTorchQuery(QueryBackendCapability):
             [dictionary list]: A list composed of dictionary which key is precision
             and value is a dict that describes all op types' quantization capability.
         """
-        return self.cur_config['int8']
+        converted_config = self._convert_format(self.cur_config)
+        return converted_config
+    
+    def _convert_format(self, config):
+        """Convert config format.
 
+        Args:
+            config: Current config.
+        
+        Return:
+            new_config: The converted config.
+        """
+        from collections import defaultdict
+        quant_mode_set = {'static', 'dynamic', 'quant_aware'}
+        converted_config = defaultdict(dict)
+        for dtype, content in config.items():
+            if isinstance(content, dict):
+                for quant_mode, cap in content.items():
+                    if quant_mode in quant_mode_set:
+                        converted_config[quant_mode][dtype] = cap
+        return converted_config
+            
     def get_op_types(self):
         """Get the supported op types by all precisions.
         Returns:

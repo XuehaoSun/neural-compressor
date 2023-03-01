@@ -21,6 +21,26 @@
   bf16: ['Linear', 'bmm', 'mm', 'baddbmm', 'addmm', 'addbmm',
           '_convolution', 'LSTM', 'LSTMCell', 'GRU', 'GRUCell'] 
   fp32: ['*'] # `*` means all op types.
+
+  int4: &1_11_capabilities_ext {
+    'static': &cap_s4_1_11 {
+          'Conv2d': &cap_s4_1_11_Conv2d {
+            'weight': {
+                        'dtype': ['int4'],
+                        'scheme': ['sym'],
+                        'granularity': ['per_channel'],
+                        'algorithm': ['minmax']
+                        },
+            'activation': {
+                        'dtype': ['uint4'],
+                        'scheme': ['asym', 'sym'],
+                        'granularity': ['per_tensor'],
+                        'algorithm': ['kl', 'minmax']
+                        },
+                    },
+          },
+          }
+
   int8: &1_11_capabilities {
     'static': &cap_s8_1_11 {
           'Conv1d': &cap_s8_1_11_Conv1d {
