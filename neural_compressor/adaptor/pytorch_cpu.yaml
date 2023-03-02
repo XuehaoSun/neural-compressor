@@ -38,8 +38,10 @@
                         'algorithm': ['kl', 'minmax']
                         },
                     },
+          'default': &cap_ext_static_s4_1_11_default {
           },
-          }
+    }
+  }
 
   int8: &1_11_capabilities {
     'static': &cap_s8_1_11 {

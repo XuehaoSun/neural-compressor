@@ -34,7 +34,7 @@ class TestBasicTuningStrategy(unittest.TestCase):
         
     def test_run_basic_one_trial_new_api(self):
         from neural_compressor.quantization import fit
-        from neural_compressor.config import PostTrainingQuantConfig
+        from neural_compressor.config import PostTrainingQuantConfig, TuningCriterion
         from neural_compressor.data import Datasets, DATALOADERS
         import torchvision
         
@@ -43,8 +43,11 @@ class TestBasicTuningStrategy(unittest.TestCase):
         dataloader = DATALOADERS["pytorch"](dataset)
         model = build_model()
         
+        def fake_eval(model):
+            return 1
+
         # tuning and accuracy criterion
-        conf = PostTrainingQuantConfig()
+        conf = PostTrainingQuantConfig(tuning_criterion=TuningCriterion(max_trials=1))
         q_model = fit(model=model, conf=conf, calib_dataloader= dataloader, eval_dataloader=dataloader)
         self.assertIsNotNone(q_model)
 
