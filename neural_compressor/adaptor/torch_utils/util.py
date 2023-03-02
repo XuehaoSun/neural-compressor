@@ -908,3 +908,27 @@ def get_torch_version():
         assert False, 'Got an unknown version of torch: {}'.format(e)
     version = Version(torch_version)
     return version
+
+
+
+
+def _get_bits_from_datatype(datatype):
+    assert 'int' in datatype or 'uint' in datatype, f"..." # TODO add a notification
+    unsigned = datatype[0] == 'u'
+    num_bits = None
+    
+    
+
+
+def calculate_min_max(datatype):
+    """Calculate the qmin and qmax according to the datatype."""
+    datatype_lst = ['int2', 'int4']
+    """
+    
+    uint4, 0, 2**4 - 1
+    """
+    num_bits, unsigned = _get_bits_from_datatype(datatype)
+    max_bound = torch.tensor((2.0**(num_bits - 1 + int(unsigned))) - 1.0)
+    
+    
+
