@@ -578,8 +578,6 @@ class TuneStrategy(object):
         traverse_start_time = time()
         for op_tuning_cfg in self.next_tune_cfg():
             tuning_start_time = time()
-            import pdb
-            pdb.set_trace()
             tune_cfg = self._tune_cfg_converter(op_tuning_cfg)
             self.trials_count += 1
             tuning_history = self._find_tuning_history(tune_cfg)
