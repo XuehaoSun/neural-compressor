@@ -1056,17 +1056,17 @@ class TemplateAdaptor(Adaptor):
         for datatype in quant_datatypes:
             if self.approach == "post_training_dynamic_quant":
                 capability_pair = [
-                    (self.query_handler.get_quantization_capability(datatype)['dynamic'], 'dynamic')]
+                    (self.query_handler.get_quantization_capability(datatype).get('dynamic', {}), 'dynamic')]
             elif self.approach == "quant_aware_training":
                 capability_pair = [
-                    (self.query_handler.get_quantization_capability(datatype)['quant_aware'], 'static')]
+                    (self.query_handler.get_quantization_capability(datatype).get('quant_aware', {}), 'static')]
             elif self.approach == "post_training_static_quant":
                 capability_pair = [
-                    (self.query_handler.get_quantization_capability(datatype)['static'], 'static')]
+                    (self.query_handler.get_quantization_capability(datatype).get('static', {}), 'static')]
             else:
                 capability_pair = [
-                    (self.query_handler.get_quantization_capability(datatype)['static'], 'static'),
-                    (self.query_handler.get_quantization_capability(datatype)['dynamic'], 'dynamic')]
+                    (self.query_handler.get_quantization_capability(datatype).get('static', {}), 'static'),
+                    (self.query_handler.get_quantization_capability(datatype).get('dynamic', {}), 'dynamic')]
 
             fp32_config = {'activation': {'dtype': 'fp32'}, 'weight': {'dtype': 'fp32'}}
             # Ignore LayerNorm, InstanceNorm3d and Embedding quantizable ops,
@@ -1088,9 +1088,8 @@ class TemplateAdaptor(Adaptor):
                     if mode == 'static' and self.approach != "quant_aware_training" and \
                         q_op[1] in ['LSTM', 'GRU', 'LSTMCell', 'GRUCell', 'RNNCell']:
                         continue
-                    op_cfg = copy.deepcopy(capability[q_op[1]]) if q_op[1] in capability \
-                        else copy.deepcopy(capability['default'])
-                    
+                    if q_op[1] in capability:
+                        op_cfg = copy.deepcopy(capability[q_op[1]])
                     if not op_cfg:
                         continue
 
