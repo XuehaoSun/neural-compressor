@@ -178,6 +178,7 @@ def main():
         q_model = quantization.fit(model,
                                     conf,
                                     calib_dataloader=val_loader,
+                                    eval_dataloader=val_loader,
                                     eval_metric=top1)
         q_model.save(args.tuned_checkpoint)
         return

@@ -3648,7 +3648,12 @@ class PyTorch_FXAdaptor(TemplateAdaptor):
 
                 for k, v in fx_op_cfgs_dict['module_name']:
                     if op_name in k:
+                        # TODO WA 
                         sub_name = k.replace(op_name + '.', '', 1)
+                        logger.info(f"    sub_name: {sub_name}")
+                        sub_name =  '.'.join(sub_name.split('.')[:-1])
+                        logger.info(f"    sub_name: {sub_name}")
+                        logger.info(f"new sub name: {sub_name}")
                         if version > Version("1.12.1"):  # pragma: no cover
                             # pylint: disable=no-member
                             fx_sub_op_cfgs.set_module_name(sub_name, v)
