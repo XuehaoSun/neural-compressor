@@ -172,10 +172,13 @@ def main():
         from neural_compressor import PostTrainingQuantConfig
         from neural_compressor import quantization
         conf = PostTrainingQuantConfig()
+        from neural_compressor.metric import METRICS
+        metrics = METRICS('pytorch')
+        top1 = metrics['topk']()
         q_model = quantization.fit(model,
                                     conf,
                                     calib_dataloader=val_loader,
-                                    eval_func=eval_func)
+                                    eval_metric=top1)
         q_model.save(args.tuned_checkpoint)
         return
 
