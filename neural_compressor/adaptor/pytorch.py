@@ -3651,8 +3651,7 @@ class PyTorch_FXAdaptor(TemplateAdaptor):
                         # TODO WA 
                         sub_name = k.replace(op_name + '.', '', 1)
                         logger.info(f"    sub_name: {sub_name}")
-                        sub_name =  '.'.join(sub_name.split('.')[:-1])
-                        logger.info(f"    sub_name: {sub_name}")
+                        # sub_name =  '.'.join(sub_name.split('.')[:-1])
                         logger.info(f"new sub name: {sub_name}")
                         if version > Version("1.12.1"):  # pragma: no cover
                             # pylint: disable=no-member
