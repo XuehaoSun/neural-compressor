@@ -1,4 +1,4 @@
-{% set version = "2.0" %}
+{% set version = "2.1" %}
 {% set buildnumber = 0 %}
 package:
   name: neural-compressor-full
@@ -25,7 +25,7 @@ requirements:
     - py-cpuinfo
     - pandas
     - pycocotools
-    - opencv
+    - opencv-python-headless
     - Flask
     - Flask-Cors
     - Flask-SocketIO
