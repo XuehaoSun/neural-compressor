@@ -25,7 +25,7 @@ requirements:
     - py-cpuinfo
     - pandas
     - pycocotools
-    - opencv
+    - opencv-python-headless
     - Flask
     - Flask-Cors
     - Flask-SocketIO

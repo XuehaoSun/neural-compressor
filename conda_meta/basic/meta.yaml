@@ -23,7 +23,7 @@ requirements:
     - py-cpuinfo
     - pandas
     - pycocotools
-    - opencv
+    - opencv-python-headless
     - psutil
     - Pillow
     - requests
