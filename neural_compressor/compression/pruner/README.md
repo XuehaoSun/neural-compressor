@@ -139,8 +139,8 @@ Pruning Criteria determines how should the weights of a neural network are score
   $$Score_{n} = 1.0 \times Score_{n-1} + 0.9 \times |W_{n} \times G_{n}|$$
 
 <div align=center>
-<a target="_blank" href="../../../docs/source/imgs/pruning/pruning_criteria.png">
-    <img src="../../../docs/source/imgs/pruning/pruning_criteria.png" width=340 height=170 alt="Pruning criteria">
+<a target="_blank" href="https://github.com/intel/neural-compressor/blob/master/docs/source/imgs/pruning/pruning_criteria.png">
+    <img src="https://github.com/intel/neural-compressor/blob/master/docs/source/imgs/pruning/pruning_criteria.png" width=340 height=170 alt="Pruning criteria">
 </a>
 </div>
 
@@ -158,8 +158,8 @@ Pruning type defines how the masks are generated and applied to a neural network
   Progressive pruning is used mainly for channel-wise pruning and currently only supports NxM pruning pattern.
 
   <div align = "center", style = "width: 77%; margin-bottom: 2%;">
-      <a target="_blank" href="../../../docs/source/imgs/pruning/progressive_pruning.png">
-          <img src="../../../docs/source/imgs/pruning/progressive_pruning.png" alt="Architecture" width=700 height=250>
+      <a target="_blank" href="https://github.com/intel/neural-compressor/blob/master/docs/source/imgs/pruning/progressive_pruning.png">
+          <img src="https://github.com/intel/neural-compressor/blob/master/docs/source/imgs/pruning/progressive_pruning.png" alt="Architecture" width=700 height=250>
       </a>
   </div>
   &emsp;&emsp;(a) refers to the traditional structured iterative pruning;  <Br/>
