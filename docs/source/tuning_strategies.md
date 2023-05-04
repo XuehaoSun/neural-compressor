@@ -92,6 +92,28 @@ accuracy_criterion = AccuracyCriterion(
 
 Intel® Neural Compressor allows users to choose different tuning processes by specifying the quantization level (`quant_level`). Currently, the recognized `quant_level`s are `0`, `1`, and `"auto"`. For `quant_level` is `1`, the tuning process can be finer-grained controlled by setting the `strategy` field.
 
+
+The following diagram illustrates how to select the right tuning process available in INC by considering the tuning time, quantization accuracy, and performance. The hexagonal boxes are annotated with numbers, and additional details for each annotated step can be found below.
+
+```mermaid
+
+flowchart TD
+    A[Trained float model] --> O1{{"[1] Auto try multiple strategies sequentially"}}
+    A[Trained float model] --> O2{{"[2] Inspect the accuracy degradation after </br> quantizing OPs  with a few rounds of tuning "}}
+    A[Trained float model] --> O3{{"[3] Quantize model more aggressively </br> establish a inference speed baseline"}}
+    O1 --> auto["quant_level=&quotauto&quot </br> ( By default)"]
+    style auto fill:#ffff
+    O2 --> C["quant_level=0"]
+    style C fill:#ffff
+    O3 --> Basic["quant_level=1"]
+    style Basic fill:#ffff
+    Basic --> Advanced{{"[4] Use more advanced search algorithms"}}
+    Advanced --> More["TuningCriterion(strategy=&quotbayesian&quot)"]
+    style More fill:#ffff
+
+```
+
+
 - `0`: "Conservative" tuning. `0` starts with an `fp32` model and tries to quantize OPs into lower precision by **op-type-wise**. `0` can be useful to give users insights about the accuracy degradation after quantizing some OPs.
 
 - `1`: "Aggressive" tuning. `1` starts with the default quantization configuration and selects different quantization parameters. `1` can be used to achieve the performance. 
