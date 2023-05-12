@@ -973,6 +973,7 @@ class TestDistributed(unittest.TestCase):
                              stderr = subprocess.PIPE, shell=True) # nosec
         try:
             out, error = p.communicate()
+            print(error)
             matches = re.findall(r'FAILED', error.decode('utf-8'))
             self.assertEqual(matches, [])
 
