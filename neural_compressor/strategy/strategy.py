@@ -186,6 +186,25 @@ class TuneStrategy(metaclass=TuneStrategyMeta):
         self._resume = resume
         if self._resume is not None: self.setup_resume(resume)
 
+    def _record_tuning_result(self):
+        if not hasattr(self, 'tuning_record'):
+            self.tuning_record = {'fp32': None, 'q_model': []}
+        self.tuning_record['fp32'] = self.baseline[0]
+        self.tuning_record['q_model'].append(self.last_tune_result[0])
+        # baseline
+        # default quant, the first time
+        # last time,
+
+    def _dump_tuning_record(self):
+        logger.info(f"*"*10)
+        logger.info(f"fp32: {self.tuning_record['fp32']}")
+        logger.info(f"q_model: {self.tuning_record['q_model']}")
+        if len(self.tuning_record['q_model']) > 1:
+            logger.info(f"last/default: {self.tuning_record['q_model'][-1]/self.tuning_record['q_model'][1]}")
+        else:
+            logger.info(f"there only {len(self.tuning_record['q_model'])} records.")
+        logger.info(f"*"*10)
+
     @property
     def adaptor(self):
         """Gets the adaptor."""
@@ -407,6 +426,7 @@ class TuneStrategy(metaclass=TuneStrategyMeta):
                 self._add_tuning_history(copy.deepcopy(tune_cfg), (-1, [0]), q_config=self.last_qmodel.q_config)
                 return
             self.last_tune_result = self._evaluate(self.last_qmodel)
+            self._record_tuning_result()
             self.cur_best_acc, self.cur_best_tuning_cfg = self.update_best_op_tuning_cfg(op_tuning_cfg)
             need_stop = self.stop(self.config.tuning_criterion.timeout, self.trials_count)
 
@@ -435,6 +455,7 @@ class TuneStrategy(metaclass=TuneStrategyMeta):
                     logger.info("*** Do not stop the tuning process, re-quantize the ops.")
                     continue
                 # recover the best quantized model from tuning config
+                self._dump_tuning_record()
                 self._recover_best_qmodel_from_tuning_cfg()
                 if self.config.diagnosis:
                     logger.debug(f'*** Start to do diagnosis (inspect tensor).')
