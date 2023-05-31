@@ -16,7 +16,7 @@ Neural Solution is a flexible and easy to use tool that brings the capabilities 
 <details>
   <summary>Prerequisites</summary>
 
-
+<!-- TODO updated it by following  https://pytorch.org/get-started/locally/#windows-prerequisites-2 -->
 - A working MPI implementation
 - Python: >= 3.8
 - Conda: >= 4.10.3
