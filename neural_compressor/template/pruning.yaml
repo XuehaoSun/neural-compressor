@@ -112,4 +112,3 @@ tuning:
   workspace:
     path: /path/to/saving/directory                  # optional. default workspace is ./nc_workspace/current_time_stamp, saving tuning history and deploy yaml.
     resume: /path/to/a/specified/snapshot/file       # optional. if specified, resume from tuning history.
-

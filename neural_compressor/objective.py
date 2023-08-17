@@ -546,4 +546,3 @@ class MultiObjective:
         weighted_result[acc_mask == False] = 0.
         best_trial = np.argmax(weighted_result)
         return best_trial, tune_data[best_trial]
-

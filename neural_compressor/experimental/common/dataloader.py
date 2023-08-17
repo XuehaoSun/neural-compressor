@@ -102,4 +102,3 @@ def _generate_common_dataloader(dataloader, framework, distributed=False):
             pin_memory=dataloader.pin_memory,
             shuffle=dataloader.shuffle,
             distributed=bool(dataloader.distributed or distributed))
-

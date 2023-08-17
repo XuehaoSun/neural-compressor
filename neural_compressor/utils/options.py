@@ -37,5 +37,3 @@ OPTIONS = {'tensorflow': None,
            'onnxrt_qdq': onnxrt,
            'onnxruntime': onnxrt,
            }
-
-

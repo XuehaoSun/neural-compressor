@@ -682,5 +682,3 @@ def collect_layer_inputs(model, layers, layer_idx, layer_inputs, device='cuda:0'
                 inputs.append(batch)
             
     return inputs, inputs_info
-
-

@@ -158,4 +158,3 @@ This table lists the TorchScript operators that are supported by ONNX export wit
 | ``quantized::sigmoid``       | Since opset 10   |
 
 > **Note**: The export function may fail due to unsupported operations. Please fallback unsupported quantized ops by setting 'op_type_dict' or 'op_name_dict' in 'QuantizationAwareTrainingConfig' or 'PostTrainingQuantConfig' config. Fallback examples please refer to [Text classification](/examples/pytorch/nlp/huggingface_models/text-classification/export/fx/)
-

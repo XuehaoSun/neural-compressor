@@ -1389,4 +1389,3 @@ def update_sq_scale(ipex_config_path, smoothquant_scale_info):
     with open(ipex_config_path, 'w') as f1:
         json.dump(ipex_config, f1, indent=4)
         f1.close()
-

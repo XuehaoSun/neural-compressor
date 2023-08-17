@@ -272,5 +272,3 @@ class RetrainFreePruning(BasePruning):
     #     self._dataloader = dataloader
     #     self._prepare_pruners()
         
-
-

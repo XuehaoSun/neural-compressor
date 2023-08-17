@@ -72,5 +72,3 @@ class QConv2D(Conv):
     @classmethod
     def from_config(cls, config):
         return cls(**config)
-
-

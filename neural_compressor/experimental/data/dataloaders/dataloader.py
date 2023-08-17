@@ -35,4 +35,3 @@ DATALOADERS = {"tensorflow": TensorflowDataLoader,
                "onnxrt_qdq": ONNXRTDataLoader,
                "onnxruntime": ONNXRTDataLoader,
                }
-

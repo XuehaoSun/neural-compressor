@@ -71,4 +71,3 @@ stages:
               utArtifact: "ut-others"
               utTestMode: "no-coverage"
               utContainerName: "utTest-no-coverage"
-

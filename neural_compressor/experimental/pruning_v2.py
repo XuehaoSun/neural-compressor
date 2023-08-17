@@ -520,4 +520,3 @@ class TfPruningCallback(object):
     def on_batch_end(self, logs=None):  # pragma: no cover
         """Call the same-name function from hooks."""
         self.on_step_end(logs)
-

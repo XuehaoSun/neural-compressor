@@ -213,4 +213,3 @@ class SmoothQuantCalibration:
                 self._sq_output_tensor_dict[key], percentile=self.percentile)
             max_vals_per_channel[key] = max_val_per_channel
         return max_vals_per_channel, self._sq_weight_node_names
-

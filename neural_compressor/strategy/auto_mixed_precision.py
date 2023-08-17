@@ -239,5 +239,3 @@ class AutoMixedPrecisionTuneStrategy(TuneStrategy):
 
             if need_stop:
                 break
-
-

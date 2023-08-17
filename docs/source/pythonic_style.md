@@ -133,4 +133,3 @@ assigning values to corresponding attributes.
 config.onnxruntime.precisions = ['int8', 'uint8']
 config.onnxruntime.graph_optimization_level = 'DISABLE_ALL' # only onnxruntime has graph_optimization_level attribute
 ```
-

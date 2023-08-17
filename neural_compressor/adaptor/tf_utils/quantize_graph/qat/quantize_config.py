@@ -118,4 +118,3 @@ layer_wise_config = {
     'weighted_layers': {'Conv2D', 'Dense', 'DepthwiseConv2D'},
     'multiple_inputs_layers': {'Multiply', 'Concatenate', 'Add'}
 }
-

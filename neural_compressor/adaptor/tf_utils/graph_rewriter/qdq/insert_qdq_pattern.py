@@ -668,5 +668,3 @@ class GenerateGraphWithQDQPattern(GraphRewriterBase):
         if "_MklFusedInstanceNorm" == self.graph_info[matched_node_name].node.op and not self.itex_mode:
             return True
         return False
-
-

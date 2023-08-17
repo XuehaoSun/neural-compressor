@@ -110,4 +110,3 @@ class HAWQ_V2TuneStrategy(TuneStrategy):
         for op_tuning_cfg in fallback_sampler:
             op_tuning_cfg['calib_sampling_size'] = calib_size
             yield op_tuning_cfg
-

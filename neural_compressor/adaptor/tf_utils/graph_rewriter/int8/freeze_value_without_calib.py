@@ -130,4 +130,3 @@ class FreezeValueWithoutCalibTransformer(GraphRewriterBase):
             return self.generate_output_graph_ranges(range_data)
         max_name_value = self.data[self.postfix]
         return self.generate_output_graph(max_name_value)
-

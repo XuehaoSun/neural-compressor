@@ -582,5 +582,3 @@ class SmoothQuantSampler(TuningSampler):
             recipe_cfgs["smooth_quant_args"] = {"alpha": alpha}
             logger.debug(f"[STRATEGY] set smooth quant alpha with: {alpha:.4f}")
             yield new_tune_cfg
-
-

@@ -94,5 +94,3 @@ class MagnitudeCriterion(PruningCriterion):
         for key in self.modules.keys():
             p = self.modules[key].get_weights()[0]
             self.scores[key] = np.abs(p)
-
-

@@ -147,4 +147,3 @@ Calibration data can only approximate the data distribution of the entire datase
  You can use different algorithms to make the data range more in line with the real data distribution. After applying these algorithms, we obtained the data distribution range of each operator. At this time, you can generate the quantized model.
 
 This quantized model can be evaluated. If the evaluation meets the set metric goal, the entire quantization process will be over. Otherwise, a new tuning configuration will be generated until a quantized model that meets the metric requirements.
-

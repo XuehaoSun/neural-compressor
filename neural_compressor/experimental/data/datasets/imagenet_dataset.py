@@ -216,4 +216,3 @@ class ONNXRTImagenetDataset(Dataset):
         if self.transform is not None:
             image, label = self.transform((image, sample[1]))
             return (image, label)
-

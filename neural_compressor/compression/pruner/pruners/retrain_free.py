@@ -189,4 +189,3 @@ class PytorchRetrainFreePruner(PytorchBasePruner):
                     else:
                         mask.grad.requires_grad_(False)
                     mask.grad.zero_()
-

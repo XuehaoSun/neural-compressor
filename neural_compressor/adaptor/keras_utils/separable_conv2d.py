@@ -114,5 +114,3 @@ class QSeparableConv2D(SeparableConv):
     @classmethod
     def from_config(cls, config):
         return cls(**config)
-
-

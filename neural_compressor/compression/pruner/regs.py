@@ -141,4 +141,3 @@ class GroupLasso(BaseReg):
                 reg_term = self.pattern.reshape_reduced_to_orig(self.reg_terms[key], key,
                                                                 self.modules[key].weight.shape)
                 self.modules[key].weight -= reg_term * self.modules[key].weight
-

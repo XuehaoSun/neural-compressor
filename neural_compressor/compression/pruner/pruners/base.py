@@ -259,4 +259,3 @@ class KerasBasePruner(BasePruner):
         for key in self.modules.keys():
             module = self.modules[key]
             module.set_weights([module.get_weights()[0] * self.masks[key]] + module.get_weights()[1:])
-

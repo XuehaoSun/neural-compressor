@@ -57,4 +57,3 @@ class LabelBalanceCOCORawFilter(Filter):    # pragma: no cover
             label: label of a sample.
         """
         return len(label) == self.size
-

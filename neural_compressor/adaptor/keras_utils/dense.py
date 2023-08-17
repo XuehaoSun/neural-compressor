@@ -69,4 +69,3 @@ class QDense(Dense):
       if self.activation is not None:
         outputs = self.activation(outputs)
       return outputs
-

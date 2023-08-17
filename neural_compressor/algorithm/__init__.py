@@ -29,4 +29,3 @@ for f in modules:
 
 
 __all__ = ["ALGORITHMS", "Algorithm", "AlgorithmScheduler", "algorithm_registry"]
-

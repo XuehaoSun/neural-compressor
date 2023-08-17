@@ -228,4 +228,3 @@ class Algorithm(object):
             NotImplementedError: NotImplementedError
         """
         raise NotImplementedError
-

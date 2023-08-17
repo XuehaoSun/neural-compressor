@@ -463,5 +463,3 @@ class PytorchPatternNInM(PytorchBasePattern):
         module.weight.data = W.reshape(module.weight.shape).to(dtype=module.weight.data.dtype)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-
-

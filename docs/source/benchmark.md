@@ -55,4 +55,3 @@ fit(model='./int8.pb', conf=conf, b_dataloader=eval_dataloader)
 ## Examples
 
 Refer to the [Benchmark example](../../examples/helloworld/tf_example5).
-
