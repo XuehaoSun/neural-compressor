@@ -515,4 +515,3 @@ class MulLinear(torch.nn.Module):
         scale = self.input_scale.view(1, self.input_scale.shape[0])
         with torch.no_grad():
             self.linear.weight *= scale
-

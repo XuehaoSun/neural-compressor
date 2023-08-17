@@ -28,4 +28,3 @@ hid = _get_hidden_states(model, calib_func=calib_func)
 hid = _get_hidden_states(model, dataloader=SimpleDataLoader())
 
 print(hid)
-
