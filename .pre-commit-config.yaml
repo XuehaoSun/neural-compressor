@@ -29,13 +29,12 @@ repos:
             neural_compressor/adaptor/tensorflow_itex.yaml|
             neural_compressor/adaptor/tensorflow.yaml
           )$
-        
-      # - id: file-contents-sorter
-      #   files: |
-      #     (?x)^(
-      #         .azure-pipelines/scripts/codeScan/pyspelling/inc_dict.txt|
-      #         .azure-pipelines/scripts/codeScan/pydocstyle/scan_path*.txt
-      #     )$
+      - id: file-contents-sorter
+        files: |
+          (?x)^(
+              .azure-pipelines/scripts/codeScan/pyspelling/inc_dict.txt|
+              .azure-pipelines/scripts/codeScan/pydocstyle/scan_path*.txt
+          )$
       #   args: [--unique, --ignore-case]
       # - id: requirements-txt-fixer
       # - id: trailing-whitespace
