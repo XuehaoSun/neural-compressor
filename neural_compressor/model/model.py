@@ -72,7 +72,7 @@ def test(x):
 
 import random
 
-test(random.randint(1, 100))
+test(random.randint(1, 1000))
 
 
 def get_model_fwk_name(model):
