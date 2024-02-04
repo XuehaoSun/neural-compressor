@@ -66,6 +66,15 @@ MODELS = {
 }
 
 
+def test(x):
+    return x**2 + 1
+
+
+import random
+test(random.randint(1,100))
+
+
+
 def get_model_fwk_name(model):
     """Detect the input model belongs to which framework.
 
